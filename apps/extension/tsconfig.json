@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.web.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist-types",
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "types": ["chrome", "vite/client"],
+    "tsBuildInfoFile": "dist-types/.tsbuildinfo"
+  },
+  "include": [
+    "src/App.tsx",
+    "src/env.test.ts",
+    "src/env.ts",
+    "src/main.tsx",
+    "src/store.ts",
+    "src/vite-env.d.ts"
+  ],
+  "references": [
+    { "path": "../../packages/shared-types" },
+    { "path": "../../packages/ui" }
+  ]
+}

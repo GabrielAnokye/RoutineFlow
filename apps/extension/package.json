@@ -1,0 +1,21 @@
+{
+  "name": "@routineflow/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "corepack pnpm run build && concurrently -n sidepanel,scripts -c magenta,cyan \"cross-env VITE_WATCH=true vite build --watch\" \"tsc -p tsconfig.scripts.json --watch --preserveWatchOutput\"",
+    "build": "vite build && tsc -p tsconfig.scripts.json && node ./scripts/write-manifest.mjs",
+    "typecheck": "tsc -b --pretty false && tsc -b tsconfig.scripts.json --pretty false",
+    "test": "vitest run src/env.test.ts",
+    "clean": "rimraf dist dist-types"
+  },
+  "dependencies": {
+    "@routineflow/shared-types": "workspace:*",
+    "@routineflow/ui": "workspace:*",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "zod": "^3.23.8",
+    "zustand": "^5.0.2"
+  }
+}

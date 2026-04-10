@@ -1,0 +1,117 @@
+:root {
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  color: #13212e;
+  background:
+    radial-gradient(circle at top left, #d6f3ff 0%, transparent 30%),
+    linear-gradient(180deg, #f9fbfd 0%, #eef4f8 100%);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.rf-shell {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+}
+
+.rf-shell__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.rf-shell__eyebrow,
+.rf-label {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #446074;
+}
+
+.rf-shell__title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.rf-shell__subtitle,
+.rf-message,
+.rf-value {
+  margin: 0;
+  color: #223445;
+}
+
+.rf-shell__body {
+  display: grid;
+  gap: 16px;
+}
+
+.rf-card {
+  border: 1px solid rgba(68, 96, 116, 0.18);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 16px 48px rgba(19, 33, 46, 0.08);
+  padding: 16px;
+}
+
+.rf-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.rf-button {
+  border: 0;
+  border-radius: 999px;
+  background: #0d5b86;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 10px 14px;
+}
+
+.rf-button:hover {
+  background: #0a4b6e;
+}
+
+.rf-status {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.rf-status--idle {
+  color: #687582;
+}
+
+.rf-status--checking {
+  color: #8c5c00;
+}
+
+.rf-status--ready {
+  color: #087443;
+}
+
+.rf-status--error {
+  color: #8a1c26;
+}

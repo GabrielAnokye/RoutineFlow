@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "target": "ES2022",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "useDefineForClassFields": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "paths": {
+      "@routineflow/shared-types": ["packages/shared-types/src/index.ts"],
+      "@routineflow/compiler": ["packages/compiler/src/index.ts"],
+      "@routineflow/db": ["packages/db/src/index.ts"],
+      "@routineflow/db/runtime-paths": ["packages/db/src/runtime-paths.ts"],
+      "@routineflow/logger": ["packages/logger/src/index.ts"],
+      "@routineflow/ui": ["packages/ui/src/index.tsx"]
+    }
+  }
+}
