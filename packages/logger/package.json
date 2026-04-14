@@ -15,7 +15,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false",
-    "test": "vitest run src/index.test.ts",
+    "test": "vitest run --root ../.. packages/logger/src/index.test.ts",
     "clean": "rimraf dist"
   },
   "dependencies": {

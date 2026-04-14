@@ -19,7 +19,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false",
-    "test": "vitest run src/**/*.test.ts",
+    "test": "vitest run --root ../.. packages/db/src",
     "clean": "rimraf dist"
   },
   "dependencies": {

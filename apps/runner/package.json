@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc -b",
     "start": "node dist/index.js",
-    "test": "vitest run src/app.test.ts",
+    "test": "vitest run --root ../.. apps/runner/src/app.test.ts",
     "typecheck": "tsc -b --pretty false",
     "clean": "rimraf dist"
   },
