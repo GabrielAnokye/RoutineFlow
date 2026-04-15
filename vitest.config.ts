@@ -34,6 +34,12 @@ export default defineConfig({
         )
       },
       {
+        find: /^@routineflow\/bridge-protocol$/,
+        replacement: fileURLToPath(
+          new URL('./packages/bridge-protocol/src/index.ts', import.meta.url)
+        )
+      },
+      {
         find: /^@routineflow\/logger$/,
         replacement: fileURLToPath(
           new URL('./packages/logger/src/index.ts', import.meta.url)

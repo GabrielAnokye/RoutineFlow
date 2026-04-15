@@ -7,7 +7,7 @@
     "dev": "corepack pnpm run build && concurrently -n sidepanel,scripts -c magenta,cyan \"cross-env VITE_WATCH=true vite build --watch\" \"tsc -p tsconfig.scripts.json --watch --preserveWatchOutput\"",
     "build": "vite build && tsc -p tsconfig.scripts.json && node ./scripts/write-manifest.mjs",
     "typecheck": "tsc -b --pretty false && tsc -b tsconfig.scripts.json --pretty false",
-    "test": "vitest run --root ../.. apps/extension/src/env.test.ts",
+    "test": "vitest run --root ../.. apps/extension/src",
     "clean": "rimraf dist dist-types"
   },
   "dependencies": {

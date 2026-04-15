@@ -16,7 +16,17 @@ export default defineConfig({
     target: 'es2022',
     rollupOptions: {
       input: {
-        sidepanel: `${extensionRoot}sidepanel.html`
+        sidepanel: `${extensionRoot}sidepanel.html`,
+        'scripts/content-recorder': `${extensionRoot}src/recorder/entry.ts`
+      },
+      output: {
+        // Keep the content-recorder as a single file (no code-splitting).
+        entryFileNames(chunkInfo) {
+          if (chunkInfo.name === 'scripts/content-recorder') {
+            return 'scripts/content-recorder.js';
+          }
+          return 'assets/[name]-[hash].js';
+        }
       }
     }
   }

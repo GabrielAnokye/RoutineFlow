@@ -69,6 +69,18 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.15)
 
+  apps/bridge-host:
+    dependencies:
+      '@routineflow/bridge-protocol':
+        specifier: workspace:*
+        version: link:../../packages/bridge-protocol
+      '@routineflow/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+
   apps/extension:
     dependencies:
       '@routineflow/shared-types':
@@ -110,6 +122,15 @@ importers:
       fastify:
         specifier: ^4.28.1
         version: 4.29.1
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+
+  packages/bridge-protocol:
+    dependencies:
+      '@routineflow/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
       zod:
         specifier: ^3.23.8
         version: 3.25.76

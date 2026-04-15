@@ -6,7 +6,9 @@
     { "path": "./packages/db" },
     { "path": "./packages/logger" },
     { "path": "./packages/ui" },
+    { "path": "./packages/bridge-protocol" },
     { "path": "./apps/runner" },
+    { "path": "./apps/bridge-host" },
     { "path": "./apps/extension" },
     { "path": "./apps/extension/tsconfig.scripts.json" }
   ]

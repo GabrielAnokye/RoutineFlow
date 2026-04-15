@@ -93,6 +93,19 @@ body {
   background: #0a4b6e;
 }
 
+.rf-button--danger {
+  background: #8a1c26;
+}
+
+.rf-button--danger:hover {
+  background: #6e151e;
+}
+
+.rf-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .rf-status {
   margin: 0 0 8px;
   font-size: 18px;
