@@ -1,162 +1,130 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
-import { WORKFLOW_SCHEMA_VERSION } from '@routineflow/shared-types';
 import { AppShell } from '@routineflow/ui';
 
-import { resolveExtensionEnv } from './env';
-import { useExtensionStore } from './store';
+import { api } from './api';
+import { useExtensionStore, type PanelView } from './store';
+import { ProfilesView } from './views/ProfilesView';
+import { RunDetailView } from './views/RunDetailView';
+import { SchedulesView } from './views/SchedulesView';
+import { WorkflowEditorView } from './views/WorkflowEditorView';
+import { WorkflowListView } from './views/WorkflowListView';
 
-interface RuntimeResponse {
-  ok: boolean;
-  source?: string;
-  message?: string;
-  payload?: Record<string, unknown>;
-}
-
-function sendRuntimeMessage(message: unknown): Promise<RuntimeResponse> {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (response?: RuntimeResponse) => {
-      const runtimeError = chrome.runtime.lastError;
-
-      if (runtimeError) {
-        reject(new Error(runtimeError.message));
-        return;
-      }
-
-      resolve(
-        response ?? {
-          ok: false,
-          message: 'No response was returned by the extension runtime.'
-        }
-      );
-    });
-  });
-}
+const TABS: { id: PanelView; label: string }[] = [
+  { id: 'workflows', label: 'Workflows' },
+  { id: 'profiles', label: 'Profiles' },
+  { id: 'schedules', label: 'Schedules' }
+];
 
 export function App() {
-  const env = resolveExtensionEnv();
-  const {
-    lastMessage, setStatus, status,
-    recordingState, recordingId, eventCount,
-    setRecordingState, setRecordingId, setEventCount
-  } = useExtensionStore();
-  const [extensionVersion, setExtensionVersion] = useState('0.1.0');
+  const { status, lastMessage, setStatus, view, setView } = useExtensionStore();
 
   useEffect(() => {
-    setExtensionVersion(chrome.runtime.getManifest().version);
-
     void (async () => {
       try {
-        setStatus('checking', 'Pinging the extension service worker.');
-        const response = await sendRuntimeMessage({ type: 'routineflow.ping' });
-
+        setStatus('checking', 'Pinging service worker.');
+        const response = await api.ping();
         setStatus(
           response.ok ? 'ready' : 'error',
           response.ok
-            ? 'Service worker is reachable.'
+            ? 'Service worker reachable.'
             : response.message ?? 'Service worker did not reply.'
         );
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : 'Service worker ping failed.';
-        setStatus('error', message);
+      } catch (err) {
+        setStatus(
+          'error',
+          err instanceof Error ? err.message : 'Service worker ping failed.'
+        );
       }
     })();
   }, [setStatus]);
 
-  async function startRecording() {
-    try {
-      setRecordingState('recording');
-      setEventCount(0);
-      const response = await sendRuntimeMessage({
-        type: 'routineflow.recording.start',
-        name: `Recording ${new Date().toLocaleTimeString()}`
-      });
-      if (response.ok && response.payload) {
-        setRecordingId(response.payload.recordingId as string);
-        setStatus('ready', 'Recording started.');
-      } else {
-        setRecordingState('idle');
-        setStatus('error', response.message ?? 'Failed to start recording.');
-      }
-    } catch (error) {
-      setRecordingState('idle');
-      setStatus('error', error instanceof Error ? error.message : 'Failed to start recording.');
-    }
-  }
-
-  async function stopRecording() {
-    try {
-      setRecordingState('stopping');
-      const response = await sendRuntimeMessage({ type: 'routineflow.recording.stop' });
-      setRecordingState('idle');
-      if (response.ok && response.payload) {
-        const count = (response.payload.eventCount as number) ?? 0;
-        setEventCount(count);
-        setStatus('ready', `Recording stopped. ${count} event(s) captured.`);
-      } else {
-        setStatus('error', response.message ?? 'Failed to stop recording.');
-      }
-    } catch (error) {
-      setRecordingState('idle');
-      setStatus('error', error instanceof Error ? error.message : 'Failed to stop recording.');
-    }
-  }
-
   return (
     <AppShell
       title="RoutineFlow"
-      subtitle="Local-first browser automation recorder."
-      actions={
-        recordingState === 'recording' ? (
-          <button className="rf-button rf-button--danger" onClick={() => void stopRecording()}>
-            Stop recording
-          </button>
-        ) : (
+      subtitle="Local-first browser automation."
+      nav={
+        TABS.map((tab) => (
           <button
-            className="rf-button"
-            onClick={() => void startRecording()}
-            disabled={recordingState === 'stopping'}
+            key={tab.id}
+            className={`rf-tab${view === tab.id ? ' rf-tab--active' : ''}`}
+            onClick={() => setView(tab.id)}
           >
-            {recordingState === 'stopping' ? 'Stopping...' : 'Start recording'}
+            {tab.label}
           </button>
-        )
+        ))
       }
     >
-      <section className="rf-card">
-        <div className="rf-grid">
-          <div>
-            <p className="rf-label">Extension name</p>
-            <p className="rf-value">{env.VITE_ROUTINEFLOW_NAME}</p>
-          </div>
-          <div>
-            <p className="rf-label">Extension version</p>
-            <p className="rf-value">{extensionVersion}</p>
-          </div>
-          <div>
-            <p className="rf-label">Runner base URL</p>
-            <p className="rf-value">{env.VITE_RUNNER_BASE_URL}</p>
-          </div>
-          <div>
-            <p className="rf-label">Workflow schema</p>
-            <p className="rf-value">v{WORKFLOW_SCHEMA_VERSION}</p>
-          </div>
-        </div>
-      </section>
-
-      {recordingState === 'recording' && (
-        <section className="rf-card">
-          <p className="rf-label">Recording</p>
-          <p className="rf-value">{recordingId ?? '...'}</p>
-          <p className="rf-message">Events captured: {eventCount}</p>
+      {/* Status bar */}
+      {status === 'error' && (
+        <section
+          className="rf-card"
+          style={{
+            borderColor: 'rgba(138,28,38,0.3)',
+            background: 'rgba(138,28,38,0.06)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 8
+          }}
+        >
+          <p
+            className="rf-message"
+            style={{
+              color: '#8a1c26',
+              margin: 0,
+              flex: 1,
+              fontSize: 12,
+              lineHeight: 1.4,
+              wordBreak: 'break-word'
+            }}
+          >
+            {lastMessage.length > 160
+              ? lastMessage.slice(0, 160) + '...'
+              : lastMessage}
+          </p>
+          <button
+            onClick={() => setStatus('idle', '')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#8a1c26',
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: 14,
+              padding: 0,
+              lineHeight: 1,
+              flexShrink: 0
+            }}
+            aria-label="Dismiss error"
+          >
+            &times;
+          </button>
         </section>
       )}
 
-      <section className="rf-card">
-        <p className="rf-label">Bridge status</p>
-        <p className={`rf-status rf-status--${status}`}>{status}</p>
-        <p className="rf-message">{lastMessage}</p>
-      </section>
+      {status === 'ready' && lastMessage && (
+        <section
+          className="rf-card"
+          style={{
+            borderColor: 'rgba(8,116,67,0.3)',
+            background: 'rgba(8,116,67,0.06)'
+          }}
+        >
+          <p
+            className="rf-message"
+            style={{ color: '#087443', margin: 0, fontSize: 12 }}
+          >
+            {lastMessage}
+          </p>
+        </section>
+      )}
+
+      {/* View router */}
+      {view === 'workflows' && <WorkflowListView />}
+      {view === 'workflow-editor' && <WorkflowEditorView />}
+      {view === 'run-detail' && <RunDetailView />}
+      {view === 'profiles' && <ProfilesView />}
+      {view === 'schedules' && <SchedulesView />}
     </AppShell>
   );
 }

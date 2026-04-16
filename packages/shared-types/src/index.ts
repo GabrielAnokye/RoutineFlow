@@ -154,6 +154,7 @@ export const WorkflowTriggerSchema = z.discriminatedUnion('type', [
 const StepBaseSchema = z.object({
   id: EntityIdSchema,
   label: z.string().min(1).optional(),
+  enabled: z.boolean().default(true),
   timeoutMs: z.number().int().positive().default(DEFAULT_STEP_TIMEOUT_MS),
   retryPolicy: RetryPolicySchema.default(DEFAULT_RETRY_POLICY),
   debug: DebugMetadataSchema.default(createDefaultDebugMetadata),
@@ -551,20 +552,44 @@ export const ArtifactSchema = z.object({
   metadata: z.record(z.string(), JsonValueSchema).default({})
 });
 
-/** Daily local schedule used for v1 workflow execution. */
+/** Day-of-week enum (0=Sunday through 6=Saturday, matches JS Date.getDay). */
+export const DayOfWeekSchema = z.number().int().min(0).max(6);
+
+/** Schedule recurrence pattern. */
+export const SchedulePatternSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('daily') }),
+  z.object({ kind: z.literal('weekdays') }),
+  z.object({ kind: z.literal('specific'), days: z.array(DayOfWeekSchema).min(1) })
+]);
+
+/** Missed-run policy when Chrome was closed during a scheduled time. */
+export const MissedRunPolicySchema = z.enum(['skip', 'run_on_next_open']);
+
+/** Local schedule used for workflow execution. */
 export const ScheduleSchema = z.object({
   id: EntityIdSchema,
   workflowId: EntityIdSchema,
   enabled: z.boolean().default(true),
-  type: z.literal('daily'),
+  pattern: SchedulePatternSchema.default({ kind: 'daily' }),
   timezone: z.string().min(1),
   hour: z.number().int().min(0).max(23),
   minute: z.number().int().min(0).max(59),
+  missedRunPolicy: MissedRunPolicySchema.default('skip'),
+  authProfileId: EntityIdSchema.optional(),
   nextRunAt: IsoDateTimeSchema.optional(),
   lastRunAt: IsoDateTimeSchema.optional(),
+  lastRunStatus: z.string().optional(),
   createdAt: IsoDateTimeSchema,
   updatedAt: IsoDateTimeSchema
 });
+
+/** Auth profile status derived from validation state. */
+export const AuthProfileStatusSchema = z.enum([
+  'never_initialized',
+  'valid',
+  'likely_expired',
+  'invalid'
+]);
 
 /** Named authenticated browser profile reused during replay. */
 export const AuthProfileSchema = z.object({
@@ -595,12 +620,41 @@ export const HealthResponseSchema = z.object({
   uptimeSeconds: z.number().nonnegative()
 });
 
+/** Failure classification codes for structured error handling. */
+export const FailureCodeSchema = z.enum([
+  'locator_not_found',
+  'ambiguous_locator',
+  'timeout',
+  'navigation_mismatch',
+  'auth_expired',
+  'frame_mismatch',
+  'blocked_page',
+  'modal_blocked',
+  'step_failed',
+  'unknown'
+]);
+
+/** Repair record emitted when fallback resolution confidence is low. */
+export const RepairRecordSchema = z.object({
+  stepId: EntityIdSchema,
+  stepType: WorkflowStepTypeSchema,
+  failureCode: FailureCodeSchema,
+  attemptedLocators: z.array(LocatorSchema),
+  resolvedLocator: LocatorSchema.optional(),
+  confidence: z.number().min(0).max(1),
+  screenshot: z.string().optional(),
+  domSnippet: z.string().optional(),
+  suggestion: z.string().optional(),
+  timestamp: IsoDateTimeSchema
+});
+
 /** Structured error payload returned by the runner. */
 export const RunErrorSchema = z.object({
-  code: z.string().min(1),
+  code: FailureCodeSchema.or(z.string().min(1)),
   message: z.string().min(1),
   stepId: EntityIdSchema.optional(),
-  details: JsonValueSchema.optional()
+  details: JsonValueSchema.optional(),
+  repairRecord: RepairRecordSchema.optional()
 });
 
 /** Streaming run-event union emitted by the executor. */
@@ -739,6 +793,161 @@ export const ValidateAuthProfileRequestSchema = z.object({
 export const ValidateAuthProfileResponseSchema = z.object({
   valid: z.boolean(),
   reason: z.string().min(1).optional()
+});
+
+/** PUT /workflows/:id request. */
+export const UpdateWorkflowRequestSchema = z.object({
+  name: z.string().min(1).optional(),
+  enabled: z.boolean().optional(),
+  defaultAuthProfileId: EntityIdSchema.nullable().optional(),
+  tags: z.array(z.string()).optional()
+});
+
+/** POST /workflows/:id/duplicate response. */
+export const DuplicateWorkflowResponseSchema = z.object({
+  workflowId: EntityIdSchema,
+  workflowVersion: z.number().int().positive(),
+  name: z.string().min(1)
+});
+
+/** POST /auth-profiles request. */
+export const CreateAuthProfileRequestSchema = z.object({
+  name: z.string().min(1),
+  browserEngine: z.enum(['chromium']).default('chromium'),
+  notes: z.string().optional()
+});
+
+/** POST /auth-profiles/:id/login-session response. */
+export const LoginSessionResponseSchema = z.object({
+  authProfileId: EntityIdSchema,
+  status: z.enum(['ready', 'saved', 'failed']),
+  message: z.string().optional()
+});
+
+/** GET /auth-profiles response. */
+export const ListAuthProfilesResponseSchema = z.object({
+  profiles: z.array(AuthProfileSchema.extend({
+    status: AuthProfileStatusSchema
+  }))
+});
+
+/** POST /schedules request. */
+export const CreateScheduleRequestSchema = z.object({
+  workflowId: EntityIdSchema,
+  pattern: SchedulePatternSchema.default({ kind: 'daily' }),
+  timezone: z.string().min(1),
+  hour: z.number().int().min(0).max(23),
+  minute: z.number().int().min(0).max(59),
+  missedRunPolicy: MissedRunPolicySchema.default('skip'),
+  authProfileId: EntityIdSchema.optional(),
+  enabled: z.boolean().default(true)
+});
+
+/** PUT /workflows/:id/definition request — full workflow step editing. */
+export const UpdateWorkflowDefinitionRequestSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  steps: z.array(WorkflowStepSchema).min(1).optional(),
+  tags: z.array(z.string()).optional(),
+  changeSummary: z.string().min(1).optional()
+});
+
+/** POST /workflows/:id/test-step request. */
+export const TestStepRequestSchema = z.object({
+  step: WorkflowStepSchema,
+  authProfileId: EntityIdSchema.optional()
+});
+
+/** POST /workflows/:id/test-step response. */
+export const TestStepResponseSchema = z.object({
+  ok: z.boolean(),
+  durationMs: z.number().int().nonnegative(),
+  resolvedLocator: LocatorSchema.optional(),
+  error: RunErrorSchema.optional(),
+  screenshotPath: z.string().optional()
+});
+
+/** POST /workflows/:id/run-from request — run starting at a specific step. */
+export const RunFromStepRequestSchema = z.object({
+  fromStepIndex: z.number().int().nonnegative(),
+  authProfileId: EntityIdSchema.optional(),
+  debugMode: z.boolean().optional()
+});
+
+/** Log redaction rules applied to structured logs before persistence. */
+export const LOG_REDACTION_PATTERNS: readonly RegExp[] = [
+  /(?<=password["\s:=]*)[^\s"',}{]+/gi,
+  /(?<=secret["\s:=]*)[^\s"',}{]+/gi,
+  /(?<=token["\s:=]*)[^\s"',}{]+/gi,
+  /(?<=authorization["\s:=]*)\S+/gi,
+  /(?<=cookie["\s:=]*)\S+/gi,
+  /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
+  /\b\d{3}[-.]?\d{2}[-.]?\d{4}\b/g,
+  /\b(?:\d[ -]*?){13,19}\b/g
+];
+
+/** Redact sensitive values in a string using the standard patterns. */
+export function redactString(input: string): string {
+  let result = input;
+  for (const pattern of LOG_REDACTION_PATTERNS) {
+    result = result.replace(pattern, '***REDACTED***');
+  }
+  return result;
+}
+
+/** Redact sensitive values in a JSON-serializable object. */
+export function redactObject<T>(obj: T): T {
+  if (typeof obj === 'string') return redactString(obj) as T;
+  if (Array.isArray(obj)) return obj.map(redactObject) as T;
+  if (obj && typeof obj === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (/password|secret|token|cookie|authorization|credential/i.test(k)) {
+        out[k] = '***REDACTED***';
+      } else {
+        out[k] = redactObject(v);
+      }
+    }
+    return out as T;
+  }
+  return obj;
+}
+
+/** Diagnostics bundle export shape. */
+export const DiagnosticsBundleSchema = z.object({
+  exportedAt: IsoDateTimeSchema,
+  environment: z.object({
+    nodeVersion: z.string(),
+    platform: z.string(),
+    arch: z.string(),
+    runnerVersion: z.string()
+  }),
+  workflow: WorkflowSchema.optional(),
+  run: RunSchema.optional(),
+  steps: z.array(RunStepResultSchema).optional(),
+  artifacts: z.array(ArtifactSchema).optional(),
+  logs: z.array(z.object({
+    level: z.string(),
+    time: z.number(),
+    msg: z.string(),
+    correlationId: z.string().optional()
+  })).optional()
+});
+
+/** PUT /schedules/:id request. */
+export const UpdateScheduleRequestSchema = z.object({
+  pattern: SchedulePatternSchema.optional(),
+  timezone: z.string().min(1).optional(),
+  hour: z.number().int().min(0).max(23).optional(),
+  minute: z.number().int().min(0).max(59).optional(),
+  missedRunPolicy: MissedRunPolicySchema.optional(),
+  authProfileId: EntityIdSchema.nullable().optional(),
+  enabled: z.boolean().optional()
+});
+
+/** GET /schedules response. */
+export const ListSchedulesResponseSchema = z.object({
+  schedules: z.array(ScheduleSchema)
 });
 
 /** Parses a workflow JSON object, applying compatible migrations when needed. */
@@ -995,3 +1204,19 @@ export type ListRunsResponse = z.infer<typeof ListRunsResponseSchema>;
 export type ListWorkflowsResponse = z.infer<typeof ListWorkflowsResponseSchema>;
 export type ValidateAuthProfileRequest = z.infer<typeof ValidateAuthProfileRequestSchema>;
 export type ValidateAuthProfileResponse = z.infer<typeof ValidateAuthProfileResponseSchema>;
+export type SchedulePattern = z.infer<typeof SchedulePatternSchema>;
+export type MissedRunPolicy = z.infer<typeof MissedRunPolicySchema>;
+export type AuthProfileStatus = z.infer<typeof AuthProfileStatusSchema>;
+export type UpdateWorkflowRequest = z.infer<typeof UpdateWorkflowRequestSchema>;
+export type UpdateWorkflowDefinitionRequest = z.infer<typeof UpdateWorkflowDefinitionRequestSchema>;
+export type TestStepRequest = z.infer<typeof TestStepRequestSchema>;
+export type TestStepResponse = z.infer<typeof TestStepResponseSchema>;
+export type RunFromStepRequest = z.infer<typeof RunFromStepRequestSchema>;
+export type FailureCode = z.infer<typeof FailureCodeSchema>;
+export type RepairRecord = z.infer<typeof RepairRecordSchema>;
+export type DiagnosticsBundle = z.infer<typeof DiagnosticsBundleSchema>;
+export type DuplicateWorkflowResponse = z.infer<typeof DuplicateWorkflowResponseSchema>;
+export type CreateAuthProfileRequest = z.infer<typeof CreateAuthProfileRequestSchema>;
+export type LoginSessionResponse = z.infer<typeof LoginSessionResponseSchema>;
+export type CreateScheduleRequest = z.infer<typeof CreateScheduleRequestSchema>;
+export type UpdateScheduleRequest = z.infer<typeof UpdateScheduleRequestSchema>;

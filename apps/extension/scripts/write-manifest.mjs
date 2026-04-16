@@ -13,7 +13,7 @@ const manifest = {
   name: 'RoutineFlow',
   version: packageJson.version,
   description: 'Local-first browser automation scaffold.',
-  permissions: ['activeTab', 'nativeMessaging', 'scripting', 'sidePanel', 'storage', 'tabs'],
+  permissions: ['activeTab', 'alarms', 'nativeMessaging', 'scripting', 'sidePanel', 'storage', 'tabs'],
   host_permissions: ['<all_urls>'],
   background: {
     service_worker: 'scripts/service-worker.js'

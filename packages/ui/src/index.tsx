@@ -4,6 +4,7 @@ export interface AppShellProps extends PropsWithChildren {
   title: string;
   subtitle: string;
   actions?: ReactNode;
+  nav?: ReactNode;
 }
 
 /**
@@ -13,6 +14,7 @@ export function AppShell({
   title,
   subtitle,
   actions,
+  nav,
   children
 }: AppShellProps) {
   return (
@@ -25,6 +27,7 @@ export function AppShell({
         </div>
         {actions ? <div className="rf-shell__actions">{actions}</div> : null}
       </header>
+      {nav ? <nav className="rf-shell__nav">{nav}</nav> : null}
       <main className="rf-shell__body">{children}</main>
     </div>
   );

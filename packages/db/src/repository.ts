@@ -191,12 +191,15 @@ function mapScheduleRow(row: SqliteRow): Schedule {
     id: row.id,
     workflowId: row.workflow_id,
     enabled: asBoolean(row.enabled),
-    type: row.type,
+    pattern: JSON.parse((row.pattern_json as string) || '{"kind":"daily"}'),
     timezone: row.timezone,
     hour: asNumber(row.hour),
     minute: asNumber(row.minute),
+    missedRunPolicy: row.missed_run_policy ?? 'skip',
+    authProfileId: asOptionalString(row.auth_profile_id),
     nextRunAt: asOptionalString(row.next_run_at),
     lastRunAt: asOptionalString(row.last_run_at),
+    lastRunStatus: asOptionalString(row.last_run_status),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   });
@@ -730,11 +733,15 @@ export class RoutineFlowRepository {
           workflow_id,
           enabled,
           type,
+          pattern_json,
           timezone,
           hour,
           minute,
+          missed_run_policy,
+          auth_profile_id,
           next_run_at,
           last_run_at,
+          last_run_status,
           created_at,
           updated_at
         ) VALUES (
@@ -742,11 +749,15 @@ export class RoutineFlowRepository {
           :workflowId,
           :enabled,
           :type,
+          :patternJson,
           :timezone,
           :hour,
           :minute,
+          :missedRunPolicy,
+          :authProfileId,
           :nextRunAt,
           :lastRunAt,
+          :lastRunStatus,
           :createdAt,
           :updatedAt
         )
@@ -754,23 +765,31 @@ export class RoutineFlowRepository {
           workflow_id = excluded.workflow_id,
           enabled = excluded.enabled,
           type = excluded.type,
+          pattern_json = excluded.pattern_json,
           timezone = excluded.timezone,
           hour = excluded.hour,
           minute = excluded.minute,
+          missed_run_policy = excluded.missed_run_policy,
+          auth_profile_id = excluded.auth_profile_id,
           next_run_at = excluded.next_run_at,
           last_run_at = excluded.last_run_at,
+          last_run_status = excluded.last_run_status,
           updated_at = excluded.updated_at
         `
       ).run({
         id: schedule.id,
         workflowId: schedule.workflowId,
         enabled: schedule.enabled ? 1 : 0,
-        type: schedule.type,
+        type: schedule.pattern.kind,
+        patternJson: serializeJson(schedule.pattern),
         timezone: schedule.timezone,
         hour: schedule.hour,
         minute: schedule.minute,
+        missedRunPolicy: schedule.missedRunPolicy,
+        authProfileId: schedule.authProfileId ?? null,
         nextRunAt: schedule.nextRunAt ?? null,
         lastRunAt: schedule.lastRunAt ?? null,
+        lastRunStatus: schedule.lastRunStatus ?? null,
         createdAt: schedule.createdAt,
         updatedAt: schedule.updatedAt
       });
@@ -852,6 +871,104 @@ export class RoutineFlowRepository {
     )
       .all()
       .map((row) => mapAuthProfileRow(row as SqliteRow));
+  }
+
+  public getAuthProfile(profileId: string): AuthProfile | null {
+    const row = prepareNamed(
+      this.database,
+      'SELECT * FROM auth_profiles WHERE id = :profileId'
+    ).get({ profileId });
+
+    return row ? mapAuthProfileRow(row as SqliteRow) : null;
+  }
+
+  public deleteAuthProfile(profileId: string): boolean {
+    const result = prepareNamed(
+      this.database,
+      'DELETE FROM auth_profiles WHERE id = :profileId'
+    ).run({ profileId }) as { changes: number };
+
+    return result.changes > 0;
+  }
+
+  public getSchedule(scheduleId: string): Schedule | null {
+    const row = prepareNamed(
+      this.database,
+      'SELECT * FROM schedules WHERE id = :scheduleId'
+    ).get({ scheduleId });
+
+    return row ? mapScheduleRow(row as SqliteRow) : null;
+  }
+
+  public getScheduleForWorkflow(workflowId: string): Schedule | null {
+    const row = prepareNamed(
+      this.database,
+      'SELECT * FROM schedules WHERE workflow_id = :workflowId LIMIT 1'
+    ).get({ workflowId });
+
+    return row ? mapScheduleRow(row as SqliteRow) : null;
+  }
+
+  public deleteSchedule(scheduleId: string): boolean {
+    const result = prepareNamed(
+      this.database,
+      'DELETE FROM schedules WHERE id = :scheduleId'
+    ).run({ scheduleId }) as { changes: number };
+
+    return result.changes > 0;
+  }
+
+  public updateWorkflow(
+    workflowId: string,
+    updates: { name?: string | undefined; description?: string | undefined; enabled?: boolean | undefined; defaultAuthProfileId?: string | null | undefined; tags?: string[] | undefined }
+  ): WorkflowRecord | null {
+    const existing = this.getWorkflow(workflowId);
+    if (!existing) return null;
+
+    const now = currentTimestamp();
+    prepareNamed(
+      this.database,
+      `
+      UPDATE workflows SET
+        name = :name,
+        description = :description,
+        enabled = :enabled,
+        default_auth_profile_id = :defaultAuthProfileId,
+        tags_json = :tagsJson,
+        updated_at = :updatedAt
+      WHERE id = :workflowId
+      `
+    ).run({
+      workflowId,
+      name: updates.name ?? existing.name,
+      description: updates.description !== undefined ? updates.description : (existing.description ?? null),
+      enabled: (updates.enabled ?? existing.enabled) ? 1 : 0,
+      defaultAuthProfileId: updates.defaultAuthProfileId !== undefined
+        ? updates.defaultAuthProfileId
+        : (existing.defaultAuthProfileId ?? null),
+      tagsJson: serializeJson(updates.tags ?? existing.tags),
+      updatedAt: now
+    });
+
+    return this.getWorkflow(workflowId);
+  }
+
+  public deleteWorkflow(workflowId: string): boolean {
+    const result = prepareNamed(
+      this.database,
+      'DELETE FROM workflows WHERE id = :workflowId'
+    ).run({ workflowId }) as { changes: number };
+
+    return result.changes > 0;
+  }
+
+  public listRuns(limit = 50): Run[] {
+    return prepareNamed(
+      this.database,
+      'SELECT * FROM runs ORDER BY started_at DESC LIMIT :limit'
+    )
+      .all({ limit })
+      .map((row) => mapRunRow(row as SqliteRow));
   }
 
   public setSetting(settingInput: Setting): Setting {

@@ -39,8 +39,8 @@ function getFramePath(): Array<{ index: number; name?: string; url?: string }> |
       }
       entries.unshift({
         index,
-        name: fe.name || undefined,
-        url: fe.src || undefined
+        ...(fe.name ? { name: fe.name } : {}),
+        ...(fe.src ? { url: fe.src } : {})
       });
       current = parent;
     }
@@ -74,7 +74,14 @@ function getDescriptor(el: Element, depth = 0): ElementDescriptor {
     parentDescriptors.push(getDescriptor(el.parentElement, depth + 1));
   }
 
-  return { tagName: tag, id, testId, classList, nthOfType, parentDescriptors };
+  return {
+    tagName: tag,
+    ...(id ? { id } : {}),
+    ...(testId ? { testId } : {}),
+    ...(classList ? { classList } : {}),
+    ...(nthOfType ? { nthOfType } : {}),
+    parentDescriptors
+  };
 }
 
 function getNearbyText(el: Element, maxLen = 120): string | undefined {
@@ -225,9 +232,9 @@ function buildElementSnapshot(el: Element) {
     isPasswordField: inputEl.type === 'password',
     isSensitiveHeuristic: shouldRedact({
       type: inputEl.type,
-      autocomplete: el.getAttribute('autocomplete') ?? undefined,
-      name: el.getAttribute('name') ?? undefined,
-      id: el.id || undefined
+      ...(el.getAttribute('autocomplete') ? { autocomplete: el.getAttribute('autocomplete')! } : {}),
+      ...(el.getAttribute('name') ? { name: el.getAttribute('name')! } : {}),
+      ...(el.id ? { id: el.id } : {})
     }).redacted
   };
 }
@@ -284,9 +291,9 @@ export class ContentRecorder {
       if (!el) return;
       const redaction = shouldRedact({
         type: (el as HTMLInputElement).type,
-        autocomplete: el.getAttribute('autocomplete') ?? undefined,
-        name: el.getAttribute('name') ?? undefined,
-        id: el.id || undefined
+        ...(el.getAttribute('autocomplete') ? { autocomplete: el.getAttribute('autocomplete')! } : {}),
+        ...(el.getAttribute('name') ? { name: el.getAttribute('name')! } : {}),
+        ...(el.id ? { id: el.id } : {})
       });
       this.buffer.push({
         eventId: nextEventId(),

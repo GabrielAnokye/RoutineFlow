@@ -1,5 +1,16 @@
+import { handleAlarm, rehydrateAlarms } from './scheduler.js';
+
 chrome.runtime.onInstalled.addListener(() => {
   console.info('[RoutineFlow] extension scaffold installed.');
+  void rehydrateAlarms();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void rehydrateAlarms();
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  void handleAlarm(alarm);
 });
 
 chrome.sidePanel
@@ -21,6 +32,8 @@ interface RecordingSession {
 }
 
 let session: RecordingSession | null = null;
+let pendingInitTabId: number | null = null;
+let pendingInitStartedAtMs = 0;
 
 function generateId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -64,6 +77,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   // ---- Recording commands ----
 
+  if (message?.type === 'routineflow.content-recorder-ready') {
+    console.info('[RoutineFlow] Content recorder ready signal received.');
+    if (session?.active && pendingInitTabId !== null) {
+      const tabIdNum = pendingInitTabId;
+      pendingInitTabId = null;
+      console.info('[RoutineFlow] Sending recorder init to tab', tabIdNum);
+      chrome.tabs.sendMessage(tabIdNum, {
+        type: 'routineflow.recorder.init',
+        tabId: String(tabIdNum),
+        startedAtMs: pendingInitStartedAtMs
+      }, () => { void chrome.runtime.lastError; });
+    }
+    sendResponse({ ok: true, source: 'service-worker' });
+    return false;
+  }
+
   if (message?.type === 'routineflow.recording.start') {
     if (session?.active) {
       sendResponse({ ok: false, message: 'Recording already in progress.' });
@@ -81,25 +110,33 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       events: [],
       eventCounter: 0
     };
-    // Inject the bundled content-recorder into the active tab, then init it.
     chrome.tabs.query({ active: true, lastFocusedWindow: true }, async (tabs) => {
       const [activeTab] = tabs;
       if (activeTab?.id) {
         const tabId = String(activeTab.id);
         session!.tabIds.add(tabId);
         try {
+          pendingInitTabId = activeTab.id;
+          pendingInitStartedAtMs = startedAtMs;
+          console.info('[RoutineFlow] Injecting content-recorder into tab', activeTab.id, activeTab.url);
           await chrome.scripting.executeScript({
             target: { tabId: activeTab.id },
             files: ['scripts/content-recorder.js']
           });
-          // Tell the injected recorder to start capturing.
-          chrome.tabs.sendMessage(activeTab.id, {
-            type: 'routineflow.recorder.init',
-            tabId,
-            startedAtMs
-          }, () => { void chrome.runtime.lastError; });
+          console.info('[RoutineFlow] Content-recorder injected. Waiting for ready signal (fallback 150ms).');
+          setTimeout(() => {
+            if (pendingInitTabId === activeTab.id) {
+              pendingInitTabId = null;
+              console.info('[RoutineFlow] Fallback: sending recorder init directly to tab', activeTab.id);
+              chrome.tabs.sendMessage(activeTab.id!, {
+                type: 'routineflow.recorder.init',
+                tabId,
+                startedAtMs
+              }, () => { void chrome.runtime.lastError; });
+            }
+          }, 150);
         } catch (err) {
-          console.warn('[RoutineFlow] Could not inject recorder:', err);
+          console.error('[RoutineFlow] Could not inject recorder:', err);
         }
       }
       sendResponse({
@@ -116,36 +153,51 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({ ok: false, message: 'No active recording.' });
       return false;
     }
+
+    let responded = false;
+    function finishStop() {
+      if (responded) return;
+      responded = true;
+      if (!session) {
+        sendResponse({ ok: false, message: 'Session already cleared.' });
+        return;
+      }
+      session.active = false;
+      const result = {
+        recordingId: session.recordingId,
+        name: session.name,
+        startedAt: session.startedAt,
+        events: session.events,
+        eventCount: session.events.length
+      };
+      session = null;
+      sendResponse({ ok: true, source: 'service-worker', payload: result });
+    }
+
     // Tell content scripts to stop and flush remaining events.
     const tabIds = [...session.tabIds];
     const stopPromises = tabIds.map(
       (tid) =>
         new Promise<void>((resolve) => {
-          chrome.tabs.sendMessage(Number(tid), { type: 'routineflow.recorder.stop' }, () => {
-            void chrome.runtime.lastError;
+          try {
+            chrome.tabs.sendMessage(Number(tid), { type: 'routineflow.recorder.stop' }, () => {
+              void chrome.runtime.lastError;
+              resolve();
+            });
+          } catch {
             resolve();
-          });
+          }
+          // Per-tab timeout in case callback never fires.
+          setTimeout(resolve, 500);
         })
     );
     void Promise.all(stopPromises).then(() => {
-      // Give a short delay for any final event batches to arrive.
-      setTimeout(() => {
-        if (!session) {
-          sendResponse({ ok: false, message: 'Session already cleared.' });
-          return;
-        }
-        session.active = false;
-        const result = {
-          recordingId: session.recordingId,
-          name: session.name,
-          startedAt: session.startedAt,
-          events: session.events,
-          eventCount: session.events.length
-        };
-        session = null;
-        sendResponse({ ok: true, source: 'service-worker', payload: result });
-      }, 200);
+      // Short delay for any final event batches, then respond.
+      setTimeout(finishStop, 150);
     });
+
+    // Hard timeout — never hang longer than 2 seconds.
+    setTimeout(finishStop, 2000);
     return true;
   }
 
@@ -166,6 +218,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === 'routineflow.recording.events') {
     if (session?.active && Array.isArray(message.events)) {
+      console.info('[RoutineFlow] Received', message.events.length, 'event(s). Total:', session.events.length + message.events.length);
       for (const evt of message.events) {
         session.eventCounter++;
         session.events.push({
@@ -173,9 +226,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           eventId: evt.eventId ?? `evt_${session.eventCounter}`
         });
       }
+    } else {
+      console.warn('[RoutineFlow] Events received but no active session or events not array.', {
+        hasSession: !!session,
+        sessionActive: session?.active,
+        eventsIsArray: Array.isArray(message.events)
+      });
     }
     sendResponse({ ok: true, source: 'service-worker' });
     return false;
+  }
+
+  if (message?.type === 'routineflow.schedules.rehydrate') {
+    void rehydrateAlarms().then(() => {
+      sendResponse({ ok: true, source: 'service-worker' });
+    });
+    return true;
   }
 
   sendResponse({ ok: false, message: 'Unsupported message type.' });

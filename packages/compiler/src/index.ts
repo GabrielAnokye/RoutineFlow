@@ -239,6 +239,7 @@ function compileEventToSteps(
         {
           id: nextId(),
           type: 'newTab',
+          enabled: true,
           timeoutMs: DEFAULT_STEP_TIMEOUT_MS,
           retryPolicy: DEFAULT_RETRY_POLICY,
           debug: buildDebug(event),
@@ -252,6 +253,7 @@ function compileEventToSteps(
         {
           id: nextId(),
           type: 'closeTab',
+          enabled: true,
           timeoutMs: DEFAULT_STEP_TIMEOUT_MS,
           retryPolicy: DEFAULT_RETRY_POLICY,
           debug: buildDebug(event),
@@ -264,6 +266,7 @@ function compileEventToSteps(
         {
           id: nextId(),
           type: 'goto',
+          enabled: true,
           url: event.url,
           waitUntil: 'load',
           timeoutMs: DEFAULT_STEP_TIMEOUT_MS,
@@ -279,6 +282,7 @@ function compileEventToSteps(
         {
           id: nextId(),
           type: 'click',
+          enabled: true,
           primaryLocator: ranked.primary,
           fallbackLocators: ranked.fallbacks,
           framePath: event.target.framePath,
@@ -298,6 +302,7 @@ function compileEventToSteps(
         {
           id: nextId(),
           type: 'type',
+          enabled: true,
           primaryLocator: ranked.primary,
           fallbackLocators: ranked.fallbacks,
           framePath: event.target.framePath,
@@ -318,6 +323,7 @@ function compileEventToSteps(
         {
           id: nextId(),
           type: 'select',
+          enabled: true,
           primaryLocator: ranked.primary,
           fallbackLocators: ranked.fallbacks,
           framePath: event.target.framePath,
@@ -336,6 +342,7 @@ function compileEventToSteps(
         {
           id: nextId(),
           type: 'press',
+          enabled: true,
           primaryLocator: ranked.primary,
           fallbackLocators: ranked.fallbacks,
           framePath: event.target.framePath,
@@ -359,6 +366,7 @@ function compileEventToSteps(
         {
           id: nextId(),
           type: 'press',
+          enabled: true,
           primaryLocator: ranked.primary,
           fallbackLocators: ranked.fallbacks,
           framePath: event.target.framePath,
@@ -379,6 +387,7 @@ function compileEventToSteps(
         {
           id: nextId(),
           type: 'waitFor',
+          enabled: true,
           primaryLocator: ranked.primary,
           fallbackLocators: ranked.fallbacks,
           framePath: event.target.framePath,
@@ -398,6 +407,7 @@ function compileEventToSteps(
         {
           id: nextId(),
           type: 'assert',
+          enabled: true,
           primaryLocator: ranked.primary,
           fallbackLocators: ranked.fallbacks,
           framePath: event.target.framePath,
@@ -461,6 +471,7 @@ function insertPostconditions(
         const waitForStep: WorkflowStep = {
           id: nextId(),
           type: 'waitFor',
+          enabled: true,
           primaryLocator: ranked.primary,
           fallbackLocators: ranked.fallbacks,
           framePath: target.framePath,
@@ -539,6 +550,7 @@ export function compileRecording(
             {
               id: 'step_noop',
               type: 'assert',
+              enabled: true,
               primaryLocator: { kind: 'css', selector: 'body' },
               fallbackLocators: [],
               timeoutMs: DEFAULT_STEP_TIMEOUT_MS,

@@ -15,7 +15,9 @@ import {
   WorkflowVersionSchema,
   createWorkflowVersion,
   exportWorkflowToJson,
-  importWorkflowFromJson
+  importWorkflowFromJson,
+  redactString,
+  redactObject
 } from './index.js';
 
 describe('WorkflowSchema', () => {
@@ -154,7 +156,7 @@ describe('supporting schemas', () => {
       id: 'schedule_morning_setup',
       workflowId: SampleWorkflow.workflowId,
       enabled: true,
-      type: 'daily',
+      pattern: { kind: 'daily' },
       timezone: 'America/Chicago',
       hour: 8,
       minute: 30,
@@ -176,8 +178,86 @@ describe('supporting schemas', () => {
     });
 
     expect(step.artifactIds[0]).toBe(artifact.id);
-    expect(schedule.type).toBe('daily');
+    expect(schedule.pattern.kind).toBe('daily');
     expect(authProfile.browserEngine).toBe('chromium');
+  });
+});
+
+describe('redactString', () => {
+  it('redacts password values', () => {
+    const input = 'password: my-secret-pass123';
+    const result = redactString(input);
+    expect(result).toContain('***REDACTED***');
+    expect(result).not.toContain('my-secret-pass123');
+  });
+
+  it('redacts token values', () => {
+    const input = 'token=abc123xyz';
+    const result = redactString(input);
+    expect(result).toContain('***REDACTED***');
+    expect(result).not.toContain('abc123xyz');
+  });
+
+  it('redacts authorization headers', () => {
+    const input = 'authorization: Bearer_eyJhbGciOiJIUzI1NiJ9.test';
+    const result = redactString(input);
+    expect(result).toContain('***REDACTED***');
+    expect(result).not.toContain('Bearer_eyJhbGciOiJIUzI1NiJ9');
+  });
+
+  it('redacts email addresses', () => {
+    const input = 'User email is user@example.com in the system';
+    const result = redactString(input);
+    expect(result).toContain('***REDACTED***');
+    expect(result).not.toContain('user@example.com');
+  });
+
+  it('redacts SSN-like patterns', () => {
+    const input = 'SSN: 123-45-6789';
+    const result = redactString(input);
+    expect(result).toContain('***REDACTED***');
+    expect(result).not.toContain('123-45-6789');
+  });
+
+  it('leaves safe strings untouched', () => {
+    const input = 'Step 3 completed successfully';
+    expect(redactString(input)).toBe(input);
+  });
+});
+
+describe('redactObject', () => {
+  it('redacts sensitive keys regardless of value', () => {
+    const obj = { username: 'alice', password: 'hunter2', token: 'abc' };
+    const result = redactObject(obj);
+    expect(result.username).toBe('alice');
+    expect(result.password).toBe('***REDACTED***');
+    expect(result.token).toBe('***REDACTED***');
+  });
+
+  it('redacts nested objects', () => {
+    const obj = { config: { secret: 'x', name: 'test' } };
+    const result = redactObject(obj);
+    expect(result.config.secret).toBe('***REDACTED***');
+    expect(result.config.name).toBe('test');
+  });
+
+  it('redacts strings inside arrays', () => {
+    const arr = ['password: foo123', 'normal text'];
+    const result = redactObject(arr);
+    expect(result[0]).toContain('***REDACTED***');
+    expect(result[1]).toBe('normal text');
+  });
+
+  it('passes through numbers and booleans unchanged', () => {
+    const obj = { count: 42, active: true };
+    const result = redactObject(obj);
+    expect(result.count).toBe(42);
+    expect(result.active).toBe(true);
+  });
+
+  it('handles null and undefined gracefully', () => {
+    expect(redactObject(null)).toBeNull();
+    expect(redactObject(undefined)).toBeUndefined();
   });
 });
 

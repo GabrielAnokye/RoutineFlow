@@ -17,13 +17,15 @@ export default defineConfig({
     rollupOptions: {
       input: {
         sidepanel: `${extensionRoot}sidepanel.html`,
+        'scripts/service-worker': `${extensionRoot}src/service-worker.ts`,
+        'scripts/content-script': `${extensionRoot}src/content-script.ts`,
         'scripts/content-recorder': `${extensionRoot}src/recorder/entry.ts`
       },
       output: {
-        // Keep the content-recorder as a single file (no code-splitting).
+        // Keep each script as a single IIFE file (no code-splitting).
         entryFileNames(chunkInfo) {
-          if (chunkInfo.name === 'scripts/content-recorder') {
-            return 'scripts/content-recorder.js';
+          if (chunkInfo.name.startsWith('scripts/')) {
+            return `${chunkInfo.name}.js`;
           }
           return 'assets/[name]-[hash].js';
         }

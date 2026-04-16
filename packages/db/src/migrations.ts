@@ -136,11 +136,27 @@ CREATE INDEX IF NOT EXISTS idx_schedules_workflow_id
   ON schedules(workflow_id);
 `;
 
+/** Adds pattern_json, missed_run_policy, auth_profile_id, last_run_status to schedules; drops type. */
+export const SCHEDULES_V2_SQL = `
+ALTER TABLE schedules ADD COLUMN pattern_json TEXT NOT NULL DEFAULT '{"kind":"daily"}';
+ALTER TABLE schedules ADD COLUMN missed_run_policy TEXT NOT NULL DEFAULT 'skip';
+ALTER TABLE schedules ADD COLUMN auth_profile_id TEXT REFERENCES auth_profiles(id) ON DELETE SET NULL;
+ALTER TABLE schedules ADD COLUMN last_run_status TEXT;
+
+-- Migrate existing type column data into pattern_json.
+UPDATE schedules SET pattern_json = '{"kind":"' || type || '"}' WHERE type IS NOT NULL;
+`;
+
 /** Ordered migration list applied to every opened database. */
 export const MIGRATIONS: Migration[] = [
   {
     id: 1,
     name: '001_initial_schema',
     sql: INITIAL_SCHEMA_SQL
+  },
+  {
+    id: 2,
+    name: '002_schedules_v2',
+    sql: SCHEDULES_V2_SQL
   }
 ];

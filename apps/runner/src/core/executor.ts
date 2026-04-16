@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto';
 
 import type {
+  FailureCode,
+  RepairRecord,
   RunEvent,
   Workflow,
   WorkflowStep
 } from '@routineflow/shared-types';
+
+import { classifyError, computeRetryDelay } from './locate.js';
 
 export interface ExecuteStepContext {
   runId: string;
@@ -37,11 +41,13 @@ export interface ExecuteWorkflowOptions {
   signal?: AbortSignal;
   launcher?: BrowserLauncher;
   now?: () => Date;
+  fromStepIndex?: number;
 }
 
 /**
  * Streams structured RunEvents for a workflow execution. Honors per-step
- * retryPolicy and AbortSignal-based cancellation.
+ * retryPolicy with capped backoff and AbortSignal-based cancellation.
+ * Skips disabled steps. Supports starting from a specific step index.
  */
 export async function* executeWorkflow(
   workflow: Workflow,
@@ -51,6 +57,7 @@ export async function* executeWorkflow(
   const now = options.now ?? (() => new Date());
   const runId = options.runId ?? `run_${randomUUID()}`;
   const signal = options.signal ?? new AbortController().signal;
+  const fromIndex = options.fromStepIndex ?? 0;
 
   const startedAt = now().toISOString();
   yield {
@@ -62,20 +69,25 @@ export async function* executeWorkflow(
   };
 
   let finalStatus: 'succeeded' | 'failed' | 'canceled' = 'succeeded';
-  let finalError: { code: string; message: string; stepId?: string } | undefined;
+  let finalError: { code: string; message: string; stepId?: string; repairRecord?: RepairRecord } | undefined;
 
-  for (let i = 0; i < workflow.steps.length; i++) {
+  for (let i = fromIndex; i < workflow.steps.length; i++) {
     if (signal.aborted) {
       finalStatus = 'canceled';
       break;
     }
     const step = workflow.steps[i]!;
+
+    // Skip disabled steps
+    if ('enabled' in step && step.enabled === false) {
+      continue;
+    }
+
     const policy = step.retryPolicy;
     const maxAttempts = policy.maxAttempts;
 
     let attempt = 1;
     let succeeded = false;
-    let lastError: unknown;
 
     while (attempt <= maxAttempts) {
       if (signal.aborted) {
@@ -113,12 +125,14 @@ export async function* executeWorkflow(
         succeeded = true;
         break;
       } catch (err) {
-        lastError = err;
+        const failureCode: FailureCode = classifyError(err, step);
+
         if (attempt < maxAttempts) {
-          const delayMs =
-            policy.strategy === 'exponential'
-              ? policy.backoffMs * 2 ** (attempt - 1)
-              : policy.backoffMs;
+          const delayMs = computeRetryDelay(
+            attempt,
+            policy.backoffMs,
+            policy.strategy
+          );
           yield {
             kind: 'step.retrying',
             runId,
@@ -138,7 +152,7 @@ export async function* executeWorkflow(
         const message =
           err instanceof Error ? err.message : 'Step execution failed.';
         finalError = {
-          code: 'step_failed',
+          code: failureCode,
           message,
           stepId: step.id
         };
