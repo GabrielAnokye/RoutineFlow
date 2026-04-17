@@ -9,6 +9,7 @@ export default tseslint.config(
     ignores: [
       '**/dist/**',
       '**/dist-types/**',
+      '**/*.d.ts',
       'coverage/**',
       'playwright-report/**',
       'test-results/**',
@@ -27,6 +28,16 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-imports': [
         'error',
         { prefer: 'type-imports', fixStyle: 'inline-type-imports' }
+      ],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          args: 'after-used',
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_'
+        }
       ]
     }
   },
@@ -55,7 +66,9 @@ export default tseslint.config(
       'apps/runner/**/*.{ts,tsx}',
       'packages/**/*.{ts,tsx}',
       'tests/**/*.{ts,tsx}',
-      'apps/extension/scripts/**/*.mjs',
+      'apps/**/scripts/**/*.mjs',
+      'apps/**/install/**/*.mjs',
+      'scripts/**/*.mjs',
       '**/*.config.{js,mjs,ts}',
       '*.config.{js,mjs,ts}'
     ],

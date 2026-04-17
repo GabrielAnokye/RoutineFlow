@@ -39,6 +39,22 @@ function generateId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * Chrome forbids extensions from injecting scripts into these origins.
+ * Returns a human-readable reason string, or null if the URL is recordable.
+ */
+function restrictedPageReason(url: string | undefined): string | null {
+  if (!url) return 'No URL for the active tab — open a page and try again.';
+  if (url.startsWith('chrome://')) return 'Cannot record chrome:// pages — Chrome blocks extensions here.';
+  if (url.startsWith('chrome-extension://')) return 'Cannot record other extension pages.';
+  if (url.startsWith('edge://') || url.startsWith('about:')) return 'Cannot record browser-internal pages.';
+  if (url.startsWith('https://chrome.google.com/webstore') || url.startsWith('https://chromewebstore.google.com')) {
+    return 'Cannot record the Chrome Web Store — Chrome blocks extensions here.';
+  }
+  if (url.startsWith('view-source:')) return 'Cannot record view-source: pages.';
+  return null;
+}
+
 // ---- Message handler ----
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -112,6 +128,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     };
     chrome.tabs.query({ active: true, lastFocusedWindow: true }, async (tabs) => {
       const [activeTab] = tabs;
+      const restricted = restrictedPageReason(activeTab?.url);
+      if (restricted) {
+        session = null;
+        sendResponse({ ok: false, message: restricted });
+        return;
+      }
       if (activeTab?.id) {
         const tabId = String(activeTab.id);
         session!.tabIds.add(tabId);

@@ -14,6 +14,7 @@ import {
   CreateAuthProfileRequestSchema,
   CreateScheduleRequestSchema,
   HealthResponseSchema,
+  PromoteLocatorRequestSchema,
   RecordingSessionSchema,
   RunFromStepRequestSchema,
   StartRunRequestSchema,
@@ -25,9 +26,11 @@ import {
   redactObject,
   type AuthProfileStatus,
   type HealthResponse,
+  type Locator,
   type RunSummary,
   type Schedule,
-  type Workflow
+  type Workflow,
+  type WorkflowStep
 } from '@routineflow/shared-types';
 
 import {
@@ -382,6 +385,81 @@ export function buildRunnerServer(
       workflowId,
       workflowVersion: version.version,
       stepsReplaced
+    };
+  });
+
+  // ---- Self-healing locator promotion ----
+
+  app.patch('/workflows/:workflowId/steps/:stepId/locator', async (request, reply) => {
+    const { workflowId, stepId } = request.params as { workflowId: string; stepId: string };
+    const parsed = PromoteLocatorRequestSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+    const existing = repository.getLatestWorkflowDefinition(workflowId);
+    if (!existing) return reply.code(404).send({ error: 'workflow_not_found' });
+
+    const promotedLocator = parsed.data.locator;
+
+    // Deep-clone and patch the step's locator
+    function patchStep(steps: WorkflowStep[]): { patched: boolean; steps: WorkflowStep[] } {
+      let patched = false;
+      const out = steps.map((step): WorkflowStep => {
+        if (step.id === stepId && 'primaryLocator' in step) {
+          const old = step.primaryLocator as Locator;
+          // Move old primary into fallbacks (if not already there), set new primary
+          const existingFallbacks: Locator[] = ('fallbackLocators' in step ? step.fallbackLocators : []) as Locator[];
+          const newFallbacks = [old, ...existingFallbacks.filter(
+            (f: Locator) => JSON.stringify(f) !== JSON.stringify(promotedLocator)
+          )];
+          patched = true;
+          return {
+            ...step,
+            primaryLocator: promotedLocator,
+            fallbackLocators: newFallbacks
+          } as WorkflowStep;
+        }
+        // Recurse into nested steps (if/loop)
+        if (step.type === 'if') {
+          const thenResult = patchStep(step.thenSteps);
+          const elseResult = patchStep(step.elseSteps);
+          if (thenResult.patched || elseResult.patched) {
+            patched = true;
+            return { ...step, thenSteps: thenResult.steps, elseSteps: elseResult.steps };
+          }
+        }
+        if (step.type === 'loop') {
+          const bodyResult = patchStep(step.bodySteps);
+          if (bodyResult.patched) {
+            patched = true;
+            return { ...step, bodySteps: bodyResult.steps };
+          }
+        }
+        return step;
+      });
+      return { patched, steps: out };
+    }
+
+    const result = patchStep(existing.steps);
+    if (!result.patched) {
+      return reply.code(404).send({ error: 'step_not_found' });
+    }
+
+    const updated: Workflow = {
+      ...existing,
+      steps: result.steps,
+      workflowVersion: existing.workflowVersion + 1,
+      updatedAt: new Date().toISOString()
+    };
+    const version = repository.saveWorkflowDefinition(updated, {
+      changeSummary: `Promoted locator on step ${stepId}`
+    });
+
+    return {
+      workflowId,
+      workflowVersion: version.version,
+      stepId,
+      promotedLocator
     };
   });
 

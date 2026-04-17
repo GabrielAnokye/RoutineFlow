@@ -98,6 +98,162 @@ describe('RoutineFlowRepository', () => {
   });
 });
 
+describe('RoutineFlowRepository — edge cases', () => {
+  it('saveWorkflowDefinition creates workflow record and version atomically', () => {
+    const database = openRoutineFlowDatabase(':memory:');
+    const wf = { ...SampleWorkflow, workflowId: 'wf_edge_1' };
+    const version = database.repository.saveWorkflowDefinition(wf, {
+      changeSummary: 'Initial version'
+    });
+
+    expect(version.workflowId).toBe('wf_edge_1');
+    expect(version.version).toBe(1);
+
+    const record = database.repository.getWorkflow('wf_edge_1');
+    expect(record).not.toBeNull();
+    expect(record!.name).toBe(wf.name);
+    expect(record!.latestVersion).toBe(1);
+
+    database.close();
+  });
+
+  it('saveWorkflowDefinition increments version on second save', () => {
+    const database = openRoutineFlowDatabase(':memory:');
+    const wf = { ...SampleWorkflow, workflowId: 'wf_edge_2' };
+
+    database.repository.saveWorkflowDefinition(wf, {});
+    const v2 = database.repository.saveWorkflowDefinition(
+      { ...wf, workflowVersion: 2 },
+      { changeSummary: 'v2' }
+    );
+
+    expect(v2.version).toBe(2);
+    const record = database.repository.getWorkflow('wf_edge_2');
+    expect(record!.latestVersion).toBe(2);
+
+    database.close();
+  });
+
+  it('getLatestWorkflowDefinition returns most recent version', () => {
+    const database = openRoutineFlowDatabase(':memory:');
+    const wf1 = { ...SampleWorkflow, workflowId: 'wf_latest', name: 'Version 1' };
+    const wf2 = { ...wf1, workflowVersion: 2, name: 'Version 2' };
+
+    database.repository.saveWorkflowDefinition(wf1, {});
+    database.repository.saveWorkflowDefinition(wf2, {});
+
+    const latest = database.repository.getLatestWorkflowDefinition('wf_latest');
+    expect(latest).not.toBeNull();
+    expect(latest!.name).toBe('Version 2');
+
+    database.close();
+  });
+
+  it('listWorkflowVersions returns versions in descending order', () => {
+    const database = openRoutineFlowDatabase(':memory:');
+    const wf = { ...SampleWorkflow, workflowId: 'wf_versions' };
+
+    database.repository.saveWorkflowDefinition(wf, { changeSummary: 'v1' });
+    database.repository.saveWorkflowDefinition(
+      { ...wf, workflowVersion: 2 },
+      { changeSummary: 'v2' }
+    );
+    database.repository.saveWorkflowDefinition(
+      { ...wf, workflowVersion: 3 },
+      { changeSummary: 'v3' }
+    );
+
+    const versions = database.repository.listWorkflowVersions('wf_versions');
+    expect(versions).toHaveLength(3);
+    expect(versions[0]!.version).toBe(3);
+    expect(versions[2]!.version).toBe(1);
+
+    database.close();
+  });
+
+  it('updateWorkflow updates name and tags', () => {
+    const database = openRoutineFlowDatabase(':memory:');
+    const wf = { ...SampleWorkflow, workflowId: 'wf_update' };
+    database.repository.saveWorkflowDefinition(wf, {});
+
+    database.repository.updateWorkflow('wf_update', {
+      name: 'New name',
+      tags: ['production', 'critical']
+    });
+
+    const record = database.repository.getWorkflow('wf_update');
+    expect(record!.name).toBe('New name');
+    expect(record!.tags).toEqual(['production', 'critical']);
+
+    database.close();
+  });
+
+  it('deleteWorkflow removes workflow and related versions', () => {
+    const database = openRoutineFlowDatabase(':memory:');
+    const wf = { ...SampleWorkflow, workflowId: 'wf_delete' };
+    database.repository.saveWorkflowDefinition(wf, {});
+
+    database.repository.deleteWorkflow('wf_delete');
+
+    expect(database.repository.getWorkflow('wf_delete')).toBeNull();
+    expect(database.repository.listWorkflowVersions('wf_delete')).toHaveLength(0);
+
+    database.close();
+  });
+
+  it('setSetting stores and retrieves key-value pairs', () => {
+    const database = openRoutineFlowDatabase(':memory:');
+    const now = '2026-04-15T00:00:00.000Z';
+
+    database.repository.setSetting({ key: 'theme', value: 'dark', updatedAt: now });
+    database.repository.setSetting({ key: 'lang', value: 'en', updatedAt: now });
+
+    const settings = database.repository.listSettings();
+    expect(settings).toHaveLength(2);
+
+    database.repository.setSetting({ key: 'theme', value: 'light', updatedAt: now });
+    const updated = database.repository.listSettings();
+    const theme = updated.find(s => s.key === 'theme');
+    expect(theme!.value).toBe('light');
+
+    database.close();
+  });
+
+  it('saveRunGraph + getRunGraph round-trips all fields', () => {
+    const database = openRoutineFlowDatabase(':memory:');
+    const seedBundle = createDevelopmentSeedBundle();
+    database.repository.upsertAuthProfile(seedBundle.authProfile);
+    database.repository.saveWorkflowVersion(seedBundle.workflowVersion);
+    database.repository.upsertSchedule(seedBundle.schedule);
+    database.repository.saveRunGraph(seedBundle.runGraph);
+
+    const graph = database.repository.getRunGraph(seedBundle.runGraph.run.id);
+    expect(graph).not.toBeNull();
+    expect(graph!.run.id).toBe(seedBundle.runGraph.run.id);
+    expect(graph!.run.status).toBe(seedBundle.runGraph.run.status);
+    expect(graph!.steps).toHaveLength(seedBundle.runGraph.steps.length);
+    expect(graph!.artifacts).toHaveLength(seedBundle.runGraph.artifacts.length);
+
+    // Verify step fields round-trip
+    const step = graph!.steps[0]!;
+    const origStep = seedBundle.runGraph.steps[0]!;
+    expect(step.stepType).toBe(origStep.stepType);
+    expect(step.status).toBe(origStep.status);
+
+    database.close();
+  });
+
+  it('returns null for non-existent entities', () => {
+    const database = openRoutineFlowDatabase(':memory:');
+
+    expect(database.repository.getWorkflow('nonexistent')).toBeNull();
+    expect(database.repository.getLatestWorkflowDefinition('nonexistent')).toBeNull();
+    expect(database.repository.getRunGraph('nonexistent')).toBeNull();
+
+    database.close();
+  });
+});
+
 describe('seedDevelopmentData', () => {
   it('seeds workflows, auth profiles, schedules, runs, and settings', () => {
     const database = openRoutineFlowDatabase(':memory:');

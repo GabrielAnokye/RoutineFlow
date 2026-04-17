@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ArtifactSchema,
   AuthProfileSchema,
+  DEFAULT_RETRY_POLICY,
+  DEFAULT_STEP_TIMEOUT_MS,
   RawRecordedEventSchema,
   RunSchema,
   RunStepResultSchema,
@@ -12,7 +14,9 @@ import {
   SampleWorkflow,
   WORKFLOW_SCHEMA_VERSION,
   WorkflowSchema,
+  WorkflowStepSchema,
   WorkflowVersionSchema,
+  createDefaultDebugMetadata,
   createWorkflowVersion,
   exportWorkflowToJson,
   importWorkflowFromJson,
@@ -59,6 +63,144 @@ describe('WorkflowVersionSchema', () => {
 
     expect(parsed.workflowId).toBe(SampleWorkflow.workflowId);
     expect(parsed.version).toBe(SampleWorkflow.workflowVersion);
+  });
+});
+
+describe('new control-flow step types', () => {
+  const base = {
+    id: 'step_test',
+    enabled: true,
+    timeoutMs: DEFAULT_STEP_TIMEOUT_MS,
+    retryPolicy: DEFAULT_RETRY_POLICY,
+    debug: createDefaultDebugMetadata()
+  };
+
+  it('validates an if step with nested then/else steps', () => {
+    const parsed = WorkflowStepSchema.parse({
+      ...base,
+      type: 'if',
+      condition: {
+        kind: 'variableEquals',
+        name: 'env',
+        equals: 'prod'
+      },
+      thenSteps: [{
+        ...base,
+        id: 'then1',
+        type: 'goto',
+        url: 'https://example.com',
+        waitUntil: 'load'
+      }],
+      elseSteps: []
+    });
+    expect(parsed.type).toBe('if');
+    if (parsed.type === 'if') {
+      expect(parsed.thenSteps).toHaveLength(1);
+      expect(parsed.elseSteps).toHaveLength(0);
+    }
+  });
+
+  it('validates a count loop step', () => {
+    const parsed = WorkflowStepSchema.parse({
+      ...base,
+      type: 'loop',
+      iteration: { kind: 'count', count: 5 },
+      bodySteps: [{
+        ...base,
+        id: 'body1',
+        type: 'click',
+        primaryLocator: { kind: 'role', role: 'button', name: 'Next' },
+        fallbackLocators: [],
+        button: 'left',
+        clickCount: 1
+      }]
+    });
+    expect(parsed.type).toBe('loop');
+    if (parsed.type === 'loop') {
+      expect(parsed.iteration.kind).toBe('count');
+      expect(parsed.bodySteps).toHaveLength(1);
+    }
+  });
+
+  it('validates a subworkflow step', () => {
+    const parsed = WorkflowStepSchema.parse({
+      ...base,
+      type: 'subworkflow',
+      workflowId: 'wf_login'
+    });
+    expect(parsed.type).toBe('subworkflow');
+    if (parsed.type === 'subworkflow') {
+      expect(parsed.workflowId).toBe('wf_login');
+      expect(parsed.inputs).toEqual({});
+    }
+  });
+
+  it('validates an httpRequest step', () => {
+    const parsed = WorkflowStepSchema.parse({
+      ...base,
+      type: 'httpRequest',
+      url: 'https://api.example.com/data',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"key":"value"}',
+      storeAs: 'apiResult'
+    });
+    expect(parsed.type).toBe('httpRequest');
+    if (parsed.type === 'httpRequest') {
+      expect(parsed.method).toBe('POST');
+      expect(parsed.storeAs).toBe('apiResult');
+    }
+  });
+
+  it('round-trips a workflow containing all new step types', () => {
+    const workflow = WorkflowSchema.parse({
+      schemaVersion: WORKFLOW_SCHEMA_VERSION,
+      workflowVersion: 1,
+      workflowId: 'wf_control_flow',
+      name: 'Control flow test',
+      enabled: true,
+      trigger: { type: 'manual' },
+      createdAt: '2026-04-16T00:00:00.000Z',
+      updatedAt: '2026-04-16T00:00:00.000Z',
+      tags: [],
+      metadata: {},
+      steps: [
+        {
+          ...base,
+          id: 's_if',
+          type: 'if',
+          condition: { kind: 'locatorExists', target: { primaryLocator: { kind: 'css', selector: '#modal' }, fallbackLocators: [] } },
+          thenSteps: [{ ...base, id: 's_click', type: 'click', primaryLocator: { kind: 'role', role: 'button', name: 'Close' }, fallbackLocators: [], button: 'left', clickCount: 1 }],
+          elseSteps: []
+        },
+        {
+          ...base,
+          id: 's_loop',
+          type: 'loop',
+          iteration: { kind: 'count', count: 3 },
+          bodySteps: [{ ...base, id: 's_goto', type: 'goto', url: 'https://example.com', waitUntil: 'load' }]
+        },
+        {
+          ...base,
+          id: 's_sub',
+          type: 'subworkflow',
+          workflowId: 'wf_login',
+          inputs: { username: 'test' }
+        },
+        {
+          ...base,
+          id: 's_http',
+          type: 'httpRequest',
+          url: 'https://api.example.com',
+          method: 'GET',
+          headers: {}
+        }
+      ]
+    });
+    expect(workflow.steps).toHaveLength(4);
+    const json = JSON.stringify(workflow);
+    const reparsed = WorkflowSchema.parse(JSON.parse(json));
+    expect(reparsed.steps).toHaveLength(4);
   });
 });
 

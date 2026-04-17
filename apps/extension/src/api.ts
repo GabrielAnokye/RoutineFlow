@@ -2,6 +2,7 @@ import type {
   AuthProfile,
   AuthProfileStatus,
   DiagnosticsBundle,
+  Locator,
   RunGraph,
   RunSummary,
   Schedule,
@@ -221,6 +222,13 @@ export const api = {
     runnerFetch<{ runId: string; status: string; fromStepIndex: number }>(
       `/workflows/${workflowId}/run-from`,
       { method: 'POST', body: JSON.stringify({ fromStepIndex, ...opts }) }
+    ),
+
+  // Runner — Self-healing locator promotion
+  promoteLocator: (workflowId: string, stepId: string, locator: Locator) =>
+    runnerFetch<{ workflowId: string; workflowVersion: number; stepId: string; promotedLocator: Locator }>(
+      `/workflows/${workflowId}/steps/${stepId}/locator`,
+      { method: 'PATCH', body: JSON.stringify({ locator }) }
     ),
 
   // Runner — Diagnostics

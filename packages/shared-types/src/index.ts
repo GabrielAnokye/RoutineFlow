@@ -60,7 +60,11 @@ export const WorkflowStepTypeSchema = z.enum([
   'press',
   'waitFor',
   'assert',
-  'closeTab'
+  'closeTab',
+  'if',
+  'loop',
+  'subworkflow',
+  'httpRequest'
 ]);
 
 /** Retry strategy used when a step is safe to retry. */
@@ -224,53 +228,220 @@ export const WaitConditionSchema = z.enum([
   'disabled'
 ]);
 
-/** Canonical workflow step schema used for persistence and import/export. */
-export const WorkflowStepSchema = z.discriminatedUnion('type', [
-  StepBaseSchema.extend({
-    type: z.literal('newTab'),
-    initialUrl: z.string().url().optional()
+/**
+ * Predicate used by `if` steps and while-style `loop` steps. Kept small on
+ * purpose — just the three conditions a v1 workflow can honestly evaluate.
+ */
+export const StepConditionSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('locatorExists'),
+    target: TargetSchema,
+    negate: z.boolean().default(false)
   }),
-  StepBaseSchema.extend({
-    type: z.literal('goto'),
-    url: z.string().url(),
-    waitUntil: z
-      .enum(['load', 'domcontentloaded', 'networkidle'])
-      .default('load')
+  z.object({
+    kind: z.literal('urlMatches'),
+    pattern: z.string().min(1),
+    negate: z.boolean().default(false)
   }),
-  InteractiveStepBaseSchema.extend({
-    type: z.literal('click'),
-    button: z.enum(['left', 'middle', 'right']).default('left'),
-    clickCount: z.number().int().min(1).max(3).default(1)
-  }),
-  InteractiveStepBaseSchema.extend({
-    type: z.literal('type'),
-    value: z.string(),
-    clearBefore: z.boolean().default(true),
-    sensitive: z.boolean().default(false)
-  }),
-  InteractiveStepBaseSchema.extend({
-    type: z.literal('select'),
-    option: SelectOptionSchema
-  }),
-  InteractiveStepBaseSchema.extend({
-    type: z.literal('press'),
-    key: z.string().min(1),
-    modifiers: z
-      .array(z.enum(['Alt', 'Control', 'Meta', 'Shift']))
-      .default([])
-  }),
-  InteractiveStepBaseSchema.extend({
-    type: z.literal('waitFor'),
-    condition: WaitConditionSchema.default('visible')
-  }),
-  InteractiveStepBaseSchema.extend({
-    type: z.literal('assert'),
-    assertion: AssertionSchema
-  }),
-  StepBaseSchema.extend({
-    type: z.literal('closeTab')
+  z.object({
+    kind: z.literal('variableEquals'),
+    name: z.string().min(1),
+    equals: z.string()
   })
 ]);
+
+/** Iteration source for `loop` steps. */
+export const LoopIterationSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('count'),
+    count: z.number().int().min(1).max(1000)
+  }),
+  z.object({
+    kind: z.literal('whileCondition'),
+    condition: StepConditionSchema,
+    maxIterations: z.number().int().min(1).max(1000).default(100)
+  })
+]);
+
+/** HTTP verbs available to `httpRequest` steps. */
+export const HttpMethodSchema = z.enum([
+  'GET',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+  'HEAD'
+]);
+
+// ----- WorkflowStep: recursive discriminated union -----
+//
+// The `if` and `loop` step types nest additional steps inside themselves, which
+// makes the schema self-referential. Zod supports this via z.lazy(), provided
+// we give the schema an explicit TypeScript type (zod can't infer recursive
+// types on its own). The manually-declared `WorkflowStep` below captures the
+// full union; `WorkflowStepSchema` then ties to it.
+
+type StepBaseFields = {
+  id: string;
+  label?: string | undefined;
+  enabled: boolean;
+  timeoutMs: number;
+  retryPolicy: RetryPolicy;
+  debug: DebugMetadata;
+  tabAlias?: string | undefined;
+};
+
+type TargetFields = {
+  primaryLocator: Locator;
+  fallbackLocators: Locator[];
+  framePath?: z.infer<typeof FramePathSchema> | undefined;
+};
+
+export type StepCondition = z.infer<typeof StepConditionSchema>;
+export type LoopIteration = z.infer<typeof LoopIterationSchema>;
+export type HttpMethod = z.infer<typeof HttpMethodSchema>;
+
+export type WorkflowStep =
+  | (StepBaseFields & { type: 'newTab'; initialUrl?: string | undefined })
+  | (StepBaseFields & {
+      type: 'goto';
+      url: string;
+      waitUntil: 'load' | 'domcontentloaded' | 'networkidle';
+    })
+  | (StepBaseFields &
+      TargetFields & {
+        type: 'click';
+        button: 'left' | 'middle' | 'right';
+        clickCount: number;
+      })
+  | (StepBaseFields &
+      TargetFields & {
+        type: 'type';
+        value: string;
+        clearBefore: boolean;
+        sensitive: boolean;
+      })
+  | (StepBaseFields &
+      TargetFields & {
+        type: 'select';
+        option: z.infer<typeof SelectOptionSchema>;
+      })
+  | (StepBaseFields &
+      TargetFields & {
+        type: 'press';
+        key: string;
+        modifiers: Array<'Alt' | 'Control' | 'Meta' | 'Shift'>;
+      })
+  | (StepBaseFields &
+      TargetFields & {
+        type: 'waitFor';
+        condition: z.infer<typeof WaitConditionSchema>;
+      })
+  | (StepBaseFields &
+      TargetFields & {
+        type: 'assert';
+        assertion: z.infer<typeof AssertionSchema>;
+      })
+  | (StepBaseFields & { type: 'closeTab' })
+  | (StepBaseFields & {
+      type: 'if';
+      condition: StepCondition;
+      thenSteps: WorkflowStep[];
+      elseSteps: WorkflowStep[];
+    })
+  | (StepBaseFields & {
+      type: 'loop';
+      iteration: LoopIteration;
+      bodySteps: WorkflowStep[];
+    })
+  | (StepBaseFields & {
+      type: 'subworkflow';
+      workflowId: string;
+      inputs: Record<string, JsonValue>;
+    })
+  | (StepBaseFields & {
+      type: 'httpRequest';
+      method: HttpMethod;
+      url: string;
+      headers: Record<string, string>;
+      body?: string | undefined;
+      storeAs?: string | undefined;
+    });
+
+/** Canonical workflow step schema used for persistence and import/export. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const WorkflowStepSchema: z.ZodType<WorkflowStep, z.ZodTypeDef, any> = z.lazy(() =>
+  z.discriminatedUnion('type', [
+    StepBaseSchema.extend({
+      type: z.literal('newTab'),
+      initialUrl: z.string().url().optional()
+    }),
+    StepBaseSchema.extend({
+      type: z.literal('goto'),
+      url: z.string().url(),
+      waitUntil: z
+        .enum(['load', 'domcontentloaded', 'networkidle'])
+        .default('load')
+    }),
+    InteractiveStepBaseSchema.extend({
+      type: z.literal('click'),
+      button: z.enum(['left', 'middle', 'right']).default('left'),
+      clickCount: z.number().int().min(1).max(3).default(1)
+    }),
+    InteractiveStepBaseSchema.extend({
+      type: z.literal('type'),
+      value: z.string(),
+      clearBefore: z.boolean().default(true),
+      sensitive: z.boolean().default(false)
+    }),
+    InteractiveStepBaseSchema.extend({
+      type: z.literal('select'),
+      option: SelectOptionSchema
+    }),
+    InteractiveStepBaseSchema.extend({
+      type: z.literal('press'),
+      key: z.string().min(1),
+      modifiers: z
+        .array(z.enum(['Alt', 'Control', 'Meta', 'Shift']))
+        .default([])
+    }),
+    InteractiveStepBaseSchema.extend({
+      type: z.literal('waitFor'),
+      condition: WaitConditionSchema.default('visible')
+    }),
+    InteractiveStepBaseSchema.extend({
+      type: z.literal('assert'),
+      assertion: AssertionSchema
+    }),
+    StepBaseSchema.extend({
+      type: z.literal('closeTab')
+    }),
+    StepBaseSchema.extend({
+      type: z.literal('if'),
+      condition: StepConditionSchema,
+      thenSteps: z.array(WorkflowStepSchema),
+      elseSteps: z.array(WorkflowStepSchema).default([])
+    }),
+    StepBaseSchema.extend({
+      type: z.literal('loop'),
+      iteration: LoopIterationSchema,
+      bodySteps: z.array(WorkflowStepSchema)
+    }),
+    StepBaseSchema.extend({
+      type: z.literal('subworkflow'),
+      workflowId: EntityIdSchema,
+      inputs: z.record(z.string(), JsonValueSchema).default({})
+    }),
+    StepBaseSchema.extend({
+      type: z.literal('httpRequest'),
+      method: HttpMethodSchema.default('GET'),
+      url: z.string().url(),
+      headers: z.record(z.string(), z.string()).default({}),
+      body: z.string().optional(),
+      storeAs: z.string().min(1).optional()
+    })
+  ])
+);
 
 /** Exported workflow JSON document stored and exchanged outside the database. */
 export const WorkflowSchema = z.object({
@@ -525,6 +696,7 @@ export const RunStepResultSchema = z.object({
   finishedAt: IsoDateTimeSchema.optional(),
   durationMs: z.number().int().nonnegative().optional(),
   resolvedLocator: LocatorSchema.optional(),
+  usedFallback: z.boolean().optional(),
   errorCode: z.string().min(1).optional(),
   errorMessage: z.string().min(1).optional(),
   artifactIds: z.array(EntityIdSchema).default([]),
@@ -682,7 +854,8 @@ export const RunEventSchema = z.discriminatedUnion('kind', [
     stepIndex: z.number().int().nonnegative(),
     finishedAt: IsoDateTimeSchema,
     durationMs: z.number().int().nonnegative(),
-    resolvedLocator: LocatorSchema.optional()
+    resolvedLocator: LocatorSchema.optional(),
+    usedFallback: z.boolean().optional()
   }),
   z.object({
     kind: z.literal('step.failed'),
@@ -872,6 +1045,18 @@ export const RunFromStepRequestSchema = z.object({
   fromStepIndex: z.number().int().nonnegative(),
   authProfileId: EntityIdSchema.optional(),
   debugMode: z.boolean().optional()
+});
+
+/** PATCH /workflows/:id/steps/:stepId/locator — promote a fallback locator. */
+export const PromoteLocatorRequestSchema = z.object({
+  locator: LocatorSchema
+});
+
+export const PromoteLocatorResponseSchema = z.object({
+  workflowId: EntityIdSchema,
+  workflowVersion: z.number().int().positive(),
+  stepId: EntityIdSchema,
+  promotedLocator: LocatorSchema
 });
 
 /** Log redaction rules applied to structured logs before persistence. */
@@ -1172,7 +1357,7 @@ export type RetryPolicy = z.infer<typeof RetryPolicySchema>;
 export type DebugMetadata = z.infer<typeof DebugMetadataSchema>;
 export type WorkflowInput = z.input<typeof WorkflowSchema>;
 export type WorkflowTrigger = z.infer<typeof WorkflowTriggerSchema>;
-export type WorkflowStep = z.infer<typeof WorkflowStepSchema>;
+// WorkflowStep is defined manually above the schema (recursive union).
 export type Workflow = z.infer<typeof WorkflowSchema>;
 export type WorkflowRecord = z.infer<typeof WorkflowRecordSchema>;
 export type WorkflowVersion = z.infer<typeof WorkflowVersionSchema>;
@@ -1220,3 +1405,5 @@ export type CreateAuthProfileRequest = z.infer<typeof CreateAuthProfileRequestSc
 export type LoginSessionResponse = z.infer<typeof LoginSessionResponseSchema>;
 export type CreateScheduleRequest = z.infer<typeof CreateScheduleRequestSchema>;
 export type UpdateScheduleRequest = z.infer<typeof UpdateScheduleRequestSchema>;
+export type PromoteLocatorRequest = z.infer<typeof PromoteLocatorRequestSchema>;
+export type PromoteLocatorResponse = z.infer<typeof PromoteLocatorResponseSchema>;

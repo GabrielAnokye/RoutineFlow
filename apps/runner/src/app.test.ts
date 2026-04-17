@@ -672,3 +672,80 @@ describe('schedule CRUD', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+describe('self-healing locator promotion', () => {
+  it('promotes a fallback locator to primary and creates a new version', async () => {
+    const repo = openRoutineFlowDatabase(':memory:').repository;
+    const r = buildRunnerServer(baseEnv, { repository: repo });
+    await r.app.ready();
+    try {
+      // Create a workflow with a click step that has a fallback
+      await r.app.inject({ method: 'POST', url: '/recordings', payload: sampleRecording });
+      const { workflows } = (await r.app.inject({ method: 'GET', url: '/workflows' })).json() as {
+        workflows: { id: string }[];
+      };
+      const wfId = workflows[0]!.id;
+
+      // Get current definition to find a step with locators
+      const defRes = await r.app.inject({ method: 'GET', url: `/workflows/${wfId}/definition` });
+      const { workflow } = defRes.json() as { workflow: { steps: { id: string; type: string; primaryLocator?: unknown }[] } };
+      const clickStepDef = workflow.steps.find(s => s.type === 'click');
+      if (!clickStepDef) throw new Error('No click step in sample workflow');
+
+      // Promote a new CSS locator
+      const newLocator = { kind: 'css', selector: '.promoted-btn' };
+      const promoteRes = await r.app.inject({
+        method: 'PATCH',
+        url: `/workflows/${wfId}/steps/${clickStepDef.id}/locator`,
+        payload: { locator: newLocator }
+      });
+      expect(promoteRes.statusCode).toBe(200);
+      const promoteBody = promoteRes.json() as { workflowVersion: number; stepId: string; promotedLocator: { kind: string } };
+      expect(promoteBody.workflowVersion).toBeGreaterThanOrEqual(2);
+      expect(promoteBody.stepId).toBe(clickStepDef.id);
+      expect(promoteBody.promotedLocator.kind).toBe('css');
+
+      // Verify the new definition has the promoted locator as primary
+      const newDefRes = await r.app.inject({ method: 'GET', url: `/workflows/${wfId}/definition` });
+      const newDef = newDefRes.json() as { workflow: { steps: { id: string; primaryLocator?: { kind: string; selector?: string }; fallbackLocators?: unknown[] }[] } };
+      const patched = newDef.workflow.steps.find(s => s.id === clickStepDef.id)!;
+      expect(patched.primaryLocator?.kind).toBe('css');
+      expect(patched.primaryLocator?.selector).toBe('.promoted-btn');
+      // Old primary should now be in fallbacks
+      expect(patched.fallbackLocators!.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      await r.app.close();
+    }
+  });
+
+  it('returns 404 for non-existent step', async () => {
+    const repo = openRoutineFlowDatabase(':memory:').repository;
+    const r = buildRunnerServer(baseEnv, { repository: repo });
+    await r.app.ready();
+    try {
+      await r.app.inject({ method: 'POST', url: '/recordings', payload: sampleRecording });
+      const { workflows } = (await r.app.inject({ method: 'GET', url: '/workflows' })).json() as {
+        workflows: { id: string }[];
+      };
+      const wfId = workflows[0]!.id;
+
+      const res = await r.app.inject({
+        method: 'PATCH',
+        url: `/workflows/${wfId}/steps/step_nonexistent/locator`,
+        payload: { locator: { kind: 'css', selector: '.x' } }
+      });
+      expect(res.statusCode).toBe(404);
+    } finally {
+      await r.app.close();
+    }
+  });
+
+  it('returns 404 for non-existent workflow', async () => {
+    const res = await runner.app.inject({
+      method: 'PATCH',
+      url: '/workflows/wf_nope/steps/s1/locator',
+      payload: { locator: { kind: 'css', selector: '.x' } }
+    });
+    expect(res.statusCode).toBe(404);
+  });
+});

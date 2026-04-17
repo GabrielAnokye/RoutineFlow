@@ -64,6 +64,22 @@ function prepareNamed(database: DatabaseSync, sql: string): StatementSync {
   return statement;
 }
 
+/**
+ * Configure the SQLite connection for crash-safety and concurrency.
+ *
+ * - journal_mode=WAL: writes go to a write-ahead log; readers don't block writers
+ *   and a crash mid-write leaves the DB consistent on next open.
+ * - synchronous=NORMAL: fsync at checkpoint, not per-transaction. Safe with WAL.
+ * - foreign_keys=ON: enforce referential integrity (node:sqlite has it off by default).
+ * - busy_timeout=5000: if another process holds a write lock, wait up to 5s before failing.
+ */
+function configureDurability(database: DatabaseSync): void {
+  database.exec('PRAGMA journal_mode = WAL;');
+  database.exec('PRAGMA synchronous = NORMAL;');
+  database.exec('PRAGMA foreign_keys = ON;');
+  database.exec('PRAGMA busy_timeout = 5000;');
+}
+
 function parseJsonColumn<TSchema extends { parse: (input: unknown) => unknown }>(
   schema: TSchema,
   serialized: string | null
@@ -232,7 +248,7 @@ function mapSettingRow(row: SqliteRow): Setting {
  * Applies pending migrations to a database connection.
  */
 export function applyMigrations(database: DatabaseSync): Migration[] {
-  database.exec('PRAGMA foreign_keys = ON;');
+  configureDurability(database);
   database.exec(CREATE_MIGRATIONS_TABLE_SQL);
 
   const appliedMigrationIds = new Set(
@@ -278,7 +294,7 @@ export class RoutineFlowRepository {
   private transactionDepth = 0;
 
   public constructor(private readonly database: DatabaseSync) {
-    this.database.exec('PRAGMA foreign_keys = ON;');
+    configureDurability(this.database);
   }
 
   public transaction<T>(callback: () => T): T {

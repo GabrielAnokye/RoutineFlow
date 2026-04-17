@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import type { Artifact, RunStepResult } from '@routineflow/shared-types';
+import type { Artifact, Locator, RunStepResult } from '@routineflow/shared-types';
 
 import { api } from '../api';
 import { useExtensionStore } from '../store';
@@ -53,6 +53,20 @@ export function RunDetailView() {
   const [polling, setPolling] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [expandedStep, setExpandedStep] = useState<number | null>(null);
+  const [promoting, setPromoting] = useState<string | null>(null);
+
+  const handlePromoteLocator = async (stepId: string, locator: Locator) => {
+    if (!run) return;
+    setPromoting(stepId);
+    try {
+      await api.promoteLocator(run.run.workflowId, stepId, locator);
+      setStatus('ready', `Locator promoted for step ${stepId}. New workflow version saved.`);
+    } catch (err) {
+      setStatus('error', err instanceof Error ? err.message : 'Promote failed.');
+    } finally {
+      setPromoting(null);
+    }
+  };
 
   const fetchRun = useCallback(async () => {
     if (!selectedRunId) return;
@@ -312,6 +326,24 @@ export function RunDetailView() {
                             <p className="rf-value" style={{ fontFamily: 'monospace', fontSize: 11 }}>
                               {step.resolvedLocator.kind}: {JSON.stringify(step.resolvedLocator).slice(0, 80)}
                             </p>
+                            {step.usedFallback && step.status === 'succeeded' && (
+                              <div style={{ marginTop: 4, padding: 6, borderRadius: 4, background: 'rgba(140,92,0,0.06)', border: '1px solid rgba(140,92,0,0.15)' }}>
+                                <p style={{ margin: '0 0 4px', fontSize: 11, color: '#8c5c00', fontWeight: 600 }}>
+                                  Used fallback locator
+                                </p>
+                                <p style={{ margin: '0 0 4px', fontSize: 11, color: '#446074' }}>
+                                  The primary locator failed. This fallback resolved successfully. Promote it to avoid future failures.
+                                </p>
+                                <button
+                                  className="rf-button"
+                                  disabled={promoting === step.stepId}
+                                  onClick={() => void handlePromoteLocator(step.stepId, step.resolvedLocator!)}
+                                  style={{ fontSize: 11, padding: '3px 8px' }}
+                                >
+                                  {promoting === step.stepId ? 'Promoting...' : 'Promote to primary'}
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )}
 

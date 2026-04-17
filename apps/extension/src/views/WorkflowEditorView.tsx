@@ -20,6 +20,10 @@ function stepLabel(step: WorkflowStep): string {
     case 'assert': return `Assert ${step.assertion.kind}`;
     case 'newTab': return step.initialUrl ? `New tab → ${step.initialUrl}` : 'New tab';
     case 'closeTab': return 'Close tab';
+    case 'if': return `If ${step.condition.kind}`;
+    case 'loop': return `Loop ${step.iteration.kind === 'count' ? `${String(step.iteration.count)}×` : 'while'}`;
+    case 'subworkflow': return `Run ${step.workflowId}`;
+    case 'httpRequest': return `${step.method} ${step.url}`;
   }
 }
 
@@ -450,7 +454,7 @@ function LocatorValueEditor({
       case 'testId': updated = { kind: 'testId', testId: value }; break;
       case 'label': updated = { kind: 'label', label: value }; break;
       case 'placeholder': updated = { kind: 'placeholder', placeholder: value }; break;
-      case 'text': updated = { kind: 'text', text: value }; break;
+      case 'text': updated = { kind: 'text', text: value, exact: locator.exact ?? false }; break;
       case 'css': updated = { kind: 'css', selector: value }; break;
       case 'xpath': updated = { kind: 'xpath', selector: value }; break;
       case 'coordinates': updated = locator; break;

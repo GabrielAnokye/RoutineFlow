@@ -85,7 +85,7 @@ export function createHttpHandlers(
     },
 
     async saveWorkflow(payload) {
-      const { recording, name } = payload as {
+      const { recording } = payload as {
         recording: unknown;
         name?: string;
       };
@@ -103,7 +103,7 @@ export function createHttpHandlers(
       return r.body;
     },
 
-    async createAuthProfile(payload) {
+    async createAuthProfile(_payload) {
       // Stub — auth profile creation is out of scope for this phase.
       return { authProfileId: 'stub_profile' };
     },
