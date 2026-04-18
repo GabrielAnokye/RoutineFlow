@@ -86,7 +86,7 @@ export function WorkflowListView() {
       setRecordingState('stopping');
       const response = await api.stopRecording();
       if (response.ok && response.payload) {
-        const { recordingId: recId, name, startedAt, events, eventCount: count } = response.payload;
+        const { recordingId: recId, name, startedAt, startUrl, events, eventCount: count } = response.payload;
         setEventCount(count ?? 0);
 
         const spliceCtx = rerecordContext;
@@ -97,7 +97,7 @@ export function WorkflowListView() {
             // Splice: compile new events and replace steps from the given index
             const result = await api.spliceWorkflow(spliceCtx.workflowId, {
               fromStepIndex: spliceCtx.fromStepIndex,
-              recording: { recordingId: recId, name, startedAt, events }
+              recording: { recordingId: recId, name, startedAt, ...(startUrl ? { startUrl } : {}), events }
             });
             setRecordingState('idle');
             setStatus(
@@ -114,6 +114,7 @@ export function WorkflowListView() {
               recordingId: recId,
               name,
               startedAt,
+              ...(startUrl ? { startUrl } : {}),
               events
             });
             setRecordingState('idle');
@@ -141,8 +142,23 @@ export function WorkflowListView() {
 
   async function handleRun(workflowId: string) {
     try {
-      const { runId } = await api.runWorkflow(workflowId);
-      setStatus('ready', `Run ${runId} started.`);
+      setStatus('ready', 'Replaying workflow in current tab...');
+      // Fetch workflow definition to get steps
+      const { workflow } = await api.getWorkflowDefinition(workflowId);
+      const response = await api.replayWorkflow(workflowId, workflow.steps);
+      if (response.ok && response.payload) {
+        const { status, stepResults } = response.payload;
+        const passed = stepResults.filter((s) => s.ok).length;
+        const total = stepResults.length;
+        if (status === 'succeeded') {
+          setStatus('ready', `Replay succeeded: ${passed}/${total} steps passed.`);
+        } else {
+          const failed = stepResults.find((s) => !s.ok);
+          setStatus('error', `Replay failed at step ${(failed?.stepIndex ?? 0) + 1} (${failed?.stepType}): ${failed?.error ?? 'unknown'}`);
+        }
+      } else {
+        setStatus('error', response.message ?? 'Replay failed.');
+      }
       void fetchRuns();
     } catch (err) {
       setStatus('error', err instanceof Error ? err.message : 'Run failed.');

@@ -13,7 +13,7 @@ import type {
 
 export type ExtensionStatus = 'idle' | 'checking' | 'ready' | 'error';
 export type RecordingState = 'idle' | 'recording' | 'stopping';
-export type PanelView = 'workflows' | 'run-detail' | 'workflow-editor' | 'profiles' | 'schedules' | 'settings';
+export type PanelView = 'workflows' | 'run-detail' | 'workflow-editor' | 'graph-editor' | 'profiles' | 'schedules' | 'settings';
 
 export interface ActiveRun {
   runId: string;

@@ -4,6 +4,7 @@ import { AppShell } from '@routineflow/ui';
 
 import { api } from './api';
 import { useExtensionStore, type PanelView } from './store';
+import { GraphEditorView } from './graph-editor/GraphEditorView';
 import { ProfilesView } from './views/ProfilesView';
 import { RunDetailView } from './views/RunDetailView';
 import { SchedulesView } from './views/SchedulesView';
@@ -12,6 +13,7 @@ import { WorkflowListView } from './views/WorkflowListView';
 
 const TABS: { id: PanelView; label: string }[] = [
   { id: 'workflows', label: 'Workflows' },
+  { id: 'graph-editor', label: 'Editor' },
   { id: 'profiles', label: 'Profiles' },
   { id: 'schedules', label: 'Schedules' }
 ];
@@ -122,6 +124,7 @@ export function App() {
       {/* View router */}
       {view === 'workflows' && <WorkflowListView />}
       {view === 'workflow-editor' && <WorkflowEditorView />}
+      {view === 'graph-editor' && <GraphEditorView />}
       {view === 'run-detail' && <RunDetailView />}
       {view === 'profiles' && <ProfilesView />}
       {view === 'schedules' && <SchedulesView />}

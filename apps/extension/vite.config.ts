@@ -19,7 +19,8 @@ export default defineConfig({
         sidepanel: `${extensionRoot}sidepanel.html`,
         'scripts/service-worker': `${extensionRoot}src/service-worker.ts`,
         'scripts/content-script': `${extensionRoot}src/content-script.ts`,
-        'scripts/content-recorder': `${extensionRoot}src/recorder/entry.ts`
+        'scripts/content-recorder': `${extensionRoot}src/recorder/entry.ts`,
+        'scripts/content-replay': `${extensionRoot}src/replay/content-replay.ts`
       },
       output: {
         // Keep each script as a single IIFE file (no code-splitting).

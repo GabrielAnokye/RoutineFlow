@@ -1,0 +1,507 @@
+/* ---- Graph Editor Root ---- */
+
+.ge-root {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px);
+  min-height: 400px;
+  gap: 0;
+}
+
+/* ---- Toolbar ---- */
+
+.ge-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(68, 96, 116, 0.12);
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+
+.ge-toolbar__spacer {
+  flex: 1;
+}
+
+.ge-toolbar__divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(68, 96, 116, 0.15);
+  margin: 0 4px;
+}
+
+.ge-toolbar__btn {
+  border: 0;
+  border-radius: 6px;
+  background: rgba(68, 96, 116, 0.08);
+  color: #223445;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.ge-toolbar__btn:hover {
+  background: rgba(68, 96, 116, 0.15);
+}
+
+.ge-toolbar__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ge-toolbar__btn--active {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.ge-toolbar__btn--run {
+  background: #0d5b86;
+  color: #fff;
+}
+
+.ge-toolbar__btn--run:hover {
+  background: #0a4b6e;
+}
+
+/* ---- Import panel ---- */
+
+.ge-import {
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(68, 96, 116, 0.18);
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+
+.ge-import__tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid rgba(68, 96, 116, 0.1);
+  margin-bottom: 8px;
+}
+
+.ge-import__tab {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: #687582;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 4px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  text-align: center;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.ge-import__tab:hover {
+  color: #13212e;
+}
+
+.ge-import__tab--active {
+  color: #0d5b86;
+  border-bottom-color: #0d5b86;
+}
+
+.ge-import__workflow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.ge-import__workflow-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid rgba(68, 96, 116, 0.12);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.ge-import__workflow-item:hover {
+  border-color: #0d5b86;
+  box-shadow: 0 2px 8px rgba(13, 91, 134, 0.1);
+}
+
+.ge-import__workflow-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #13212e;
+}
+
+.ge-import__workflow-meta {
+  font-size: 10px;
+  color: #687582;
+}
+
+/* ---- Layout ---- */
+
+.ge-layout {
+  display: flex;
+  flex: 1;
+  gap: 0;
+  min-height: 0;
+  border: 1px solid rgba(68, 96, 116, 0.12);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+/* ---- Sidebar ---- */
+
+.ge-sidebar {
+  width: 180px;
+  border-right: 1px solid rgba(68, 96, 116, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+  display: flex;
+  flex-direction: column;
+  transition: width 0.2s;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.ge-sidebar--collapsed {
+  width: 28px;
+}
+
+.ge-sidebar__toggle {
+  border: 0;
+  background: none;
+  color: #687582;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px;
+  text-align: center;
+  border-bottom: 1px solid rgba(68, 96, 116, 0.08);
+}
+
+.ge-sidebar__toggle:hover {
+  color: #13212e;
+}
+
+.ge-sidebar__content {
+  padding: 8px;
+}
+
+.ge-sidebar__title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #446074;
+}
+
+.ge-sidebar__category {
+  margin-bottom: 12px;
+}
+
+.ge-sidebar__cat-label {
+  margin: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+}
+
+.ge-sidebar__item {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px;
+  border: 1px solid rgba(68, 96, 116, 0.1);
+  border-radius: 6px;
+  margin-bottom: 4px;
+  cursor: grab;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.ge-sidebar__item:hover {
+  border-color: #0d5b86;
+  box-shadow: 0 2px 8px rgba(13, 91, 134, 0.1);
+}
+
+.ge-sidebar__item:active {
+  cursor: grabbing;
+}
+
+.ge-sidebar__item-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #13212e;
+}
+
+.ge-sidebar__item-desc {
+  font-size: 10px;
+  color: #687582;
+  margin-top: 1px;
+}
+
+/* ---- Canvas ---- */
+
+.ge-canvas {
+  flex: 1;
+  min-width: 0;
+}
+
+.ge-canvas .react-flow__node {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  width: auto;
+}
+
+/* ---- Nodes ---- */
+
+.ge-node {
+  min-width: 160px;
+  max-width: 220px;
+  border: 1.5px solid rgba(68, 96, 116, 0.2);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(19, 33, 46, 0.06);
+  font-family: inherit;
+  position: relative;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.ge-node:hover {
+  box-shadow: 0 4px 12px rgba(19, 33, 46, 0.1);
+}
+
+.ge-node__status {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.ge-node__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-left: 3px solid transparent;
+  border-radius: 6px 8px 0 0;
+}
+
+.ge-node__icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.ge-node__titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ge-node__label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #13212e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ge-node__subtitle {
+  font-size: 10px;
+  color: #687582;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ge-node__body {
+  padding: 0 10px 8px;
+}
+
+.ge-node__value {
+  display: block;
+  font-size: 10px;
+  color: #446074;
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.ge-node__tag {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(68, 96, 116, 0.08);
+  color: #446074;
+}
+
+.ge-node__branches {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ge-node__branch {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.ge-node__branch--true {
+  color: #10b981;
+}
+
+.ge-node__branch--false {
+  color: #ef4444;
+}
+
+.ge-node__log {
+  padding: 4px 10px 6px;
+  font-size: 10px;
+  color: #687582;
+  border-top: 1px solid rgba(68, 96, 116, 0.08);
+}
+
+/* ---- Handles ---- */
+
+.ge-handle {
+  width: 10px !important;
+  height: 10px !important;
+  border: 2px solid #94a3b8 !important;
+  background: #fff !important;
+  transition: border-color 0.15s;
+}
+
+.ge-handle:hover {
+  border-color: #0d5b86 !important;
+}
+
+.ge-handle--true {
+  border-color: #10b981 !important;
+}
+
+.ge-handle--false {
+  border-color: #ef4444 !important;
+}
+
+/* ---- Config panel ---- */
+
+.ge-config {
+  width: 240px;
+  border-left: 1px solid rgba(68, 96, 116, 0.12);
+  background: rgba(255, 255, 255, 0.95);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.ge-config__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(68, 96, 116, 0.1);
+}
+
+.ge-config__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #13212e;
+}
+
+.ge-config__close {
+  border: 0;
+  background: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: #687582;
+  padding: 0;
+  line-height: 1;
+}
+
+.ge-config__close:hover {
+  color: #13212e;
+}
+
+.ge-config__body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ge-config__footer {
+  padding: 10px 12px;
+  border-top: 1px solid rgba(68, 96, 116, 0.1);
+  margin-top: auto;
+}
+
+.ge-config__field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ge-config__field-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #446074;
+}
+
+.ge-config__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #223445;
+  cursor: pointer;
+}
+
+.ge-config__hint {
+  margin: 0;
+  font-size: 11px;
+  color: #687582;
+  font-style: italic;
+}
+
+/* ---- React Flow overrides ---- */
+
+.ge-canvas .react-flow__controls {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(19, 33, 46, 0.08);
+}
+
+.ge-canvas .react-flow__minimap {
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(19, 33, 46, 0.08);
+}
+
+.ge-canvas .react-flow__edge-path {
+  stroke: #94a3b8;
+  stroke-width: 2;
+}

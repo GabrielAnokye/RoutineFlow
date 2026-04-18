@@ -314,6 +314,63 @@ describe('compileRecording — normalization pipeline', () => {
     expect(wf.steps[1]!.tabAlias).toBe('t2');
   });
 
+  it('11. recording starting on a page prepends an inferred goto step', () => {
+    const wf = compileRecording(
+      session([
+        {
+          eventId: 'e1',
+          type: 'click',
+          atMs: 0,
+          tabId: 't1',
+          pageUrl: 'https://example.com/app',
+          target: {
+            primaryLocator: { kind: 'role', role: 'button', name: 'Login' },
+            fallbackLocators: []
+          },
+          button: 'left'
+        }
+      ])
+    );
+
+    const types = wf.steps.map((s) => s.type);
+    expect(types[0]).toBe('goto');
+    const goto = wf.steps[0]!;
+    if (goto.type !== 'goto') throw new Error('expected goto');
+    expect(goto.url).toBe('https://example.com/app');
+    expect(goto.debug.notes).toContain('inferred-initial-navigation');
+  });
+
+  it('12. recording that starts with navigate does NOT double-prepend a goto', () => {
+    const wf = compileRecording(
+      session([
+        {
+          eventId: 'e1',
+          type: 'navigate',
+          atMs: 0,
+          tabId: 't1',
+          url: 'https://example.com/app'
+        },
+        {
+          eventId: 'e2',
+          type: 'click',
+          atMs: 500,
+          tabId: 't1',
+          pageUrl: 'https://example.com/app',
+          target: {
+            primaryLocator: { kind: 'role', role: 'button', name: 'OK' },
+            fallbackLocators: []
+          },
+          button: 'left'
+        }
+      ])
+    );
+
+    const types = wf.steps.map((s) => s.type);
+    expect(types[0]).toBe('goto');
+    // Only one goto, not two
+    expect(types.filter((t) => t === 'goto')).toHaveLength(1);
+  });
+
   it('bonus: locator ranking promotes role over css when both available', () => {
     const wf = compileRecording(
       session([

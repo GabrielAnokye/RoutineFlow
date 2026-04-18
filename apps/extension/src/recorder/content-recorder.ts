@@ -280,6 +280,7 @@ export class ContentRecorder {
         type: 'click',
         atMs: this.atMs(),
         tabId: this.tabId,
+        pageUrl: window.location.href,
         target: buildTarget(el),
         element: buildElementSnapshot(el),
         button: buttonMap[e.button] ?? 'left'
@@ -289,6 +290,8 @@ export class ContentRecorder {
     const onInput = (e: Event) => {
       const el = e.target as HTMLInputElement | HTMLTextAreaElement | null;
       if (!el) return;
+      // <select> elements fire input events but are handled by onChange
+      if (el.tagName === 'SELECT') return;
       const redaction = shouldRedact({
         type: (el as HTMLInputElement).type,
         ...(el.getAttribute('autocomplete') ? { autocomplete: el.getAttribute('autocomplete')! } : {}),
@@ -300,6 +303,7 @@ export class ContentRecorder {
         type: 'input',
         atMs: this.atMs(),
         tabId: this.tabId,
+        pageUrl: window.location.href,
         target: buildTarget(el),
         element: buildElementSnapshot(el),
         value: redaction.redacted ? '' : el.value,
@@ -317,6 +321,7 @@ export class ContentRecorder {
         type: 'select',
         atMs: this.atMs(),
         tabId: this.tabId,
+        pageUrl: window.location.href,
         target: buildTarget(el),
         option: { by: 'label', value: selected.text },
         element: buildElementSnapshot(el)
@@ -331,6 +336,7 @@ export class ContentRecorder {
         type: 'submit',
         atMs: this.atMs(),
         tabId: this.tabId,
+        pageUrl: window.location.href,
         target: buildTarget(el),
         element: buildElementSnapshot(el)
       });
@@ -344,6 +350,7 @@ export class ContentRecorder {
         type: 'focus',
         atMs: this.atMs(),
         tabId: this.tabId,
+        pageUrl: window.location.href,
         target: buildTarget(el)
       });
     };
@@ -356,6 +363,7 @@ export class ContentRecorder {
         type: 'blur',
         atMs: this.atMs(),
         tabId: this.tabId,
+        pageUrl: window.location.href,
         target: buildTarget(el)
       });
     };

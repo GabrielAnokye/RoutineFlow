@@ -66,6 +66,17 @@ export const api = {
   // SW messages
   ping: () => sendSWMessage({ type: 'routineflow.ping' }),
 
+  replayWorkflow: (workflowId: string, steps: unknown[]) =>
+    sendSWMessage<{
+      workflowId: string;
+      status: string;
+      stepResults: Array<{ stepIndex: number; stepType: string; ok: boolean; error?: string; durationMs: number }>;
+    }>({
+      type: 'routineflow.replay.start',
+      workflowId,
+      steps
+    }),
+
   startRecording: (name: string) =>
     sendSWMessage<{ recordingId: string }>({
       type: 'routineflow.recording.start',
@@ -77,6 +88,7 @@ export const api = {
       recordingId: string;
       name: string;
       startedAt: string;
+      startUrl?: string;
       events: unknown[];
       eventCount: number;
     }>({ type: 'routineflow.recording.stop' }),
@@ -85,6 +97,7 @@ export const api = {
     recordingId: string;
     name: string;
     startedAt: string;
+    startUrl?: string;
     events: unknown[];
   }) =>
     runnerFetch<{ recordingId: string; workflowId: string; workflowVersion: number }>(
@@ -200,7 +213,7 @@ export const api = {
 
   spliceWorkflow: (
     workflowId: string,
-    body: { fromStepIndex: number; recording: { recordingId: string; name: string; startedAt: string; events: unknown[] } }
+    body: { fromStepIndex: number; recording: { recordingId: string; name: string; startedAt: string; startUrl?: string; events: unknown[] } }
   ) =>
     runnerFetch<{ workflowId: string; workflowVersion: number; stepsReplaced: number }>(
       `/workflows/${workflowId}/splice`,

@@ -25,6 +25,7 @@ interface RecordingSession {
   recordingId: string;
   name: string;
   startedAt: string;
+  startUrl?: string;
   tabIds: Set<string>;
   active: boolean;
   events: Array<Record<string, unknown>>;
@@ -137,6 +138,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (activeTab?.id) {
         const tabId = String(activeTab.id);
         session!.tabIds.add(tabId);
+        if (activeTab.url) session!.startUrl = activeTab.url;
         try {
           pendingInitTabId = activeTab.id;
           pendingInitStartedAtMs = startedAtMs;
@@ -189,6 +191,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         recordingId: session.recordingId,
         name: session.name,
         startedAt: session.startedAt,
+        startUrl: session.startUrl,
         events: session.events,
         eventCount: session.events.length
       };
@@ -266,6 +269,229 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  // ---- Replay orchestration ----
+
+  if (message?.type === 'routineflow.replay.start') {
+    const { workflowId, steps } = message as {
+      workflowId: string;
+      steps: Array<Record<string, unknown>>;
+    };
+    void runReplay(workflowId, steps).then((result) => {
+      sendResponse({ ok: true, source: 'service-worker', payload: result });
+    }).catch((err) => {
+      sendResponse({ ok: false, message: err instanceof Error ? err.message : 'Replay failed.' });
+    });
+    return true;
+  }
+
+  if (message?.type === 'routineflow.content-replay-ready') {
+    sendResponse({ ok: true, source: 'service-worker' });
+    return false;
+  }
+
   sendResponse({ ok: false, message: 'Unsupported message type.' });
   return false;
 });
+
+// ---- Replay engine ----
+
+interface ReplayStepResult {
+  stepIndex: number;
+  stepType: string;
+  ok: boolean;
+  error?: string;
+  durationMs: number;
+}
+
+async function runReplay(
+  workflowId: string,
+  steps: Array<Record<string, unknown>>
+): Promise<{ workflowId: string; status: string; stepResults: ReplayStepResult[] }> {
+  const stepResults: ReplayStepResult[] = [];
+
+  // Find the active tab
+  const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (!activeTab?.id) {
+    throw new Error('No active tab available for replay.');
+  }
+  let tabId = activeTab.id;
+  let replayScriptInjected = false;
+
+  async function ensureReplayScript(tid: number): Promise<void> {
+    if (replayScriptInjected) return;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tid },
+        files: ['scripts/content-replay.js']
+      });
+      replayScriptInjected = true;
+      // Brief delay for script to initialize
+      await new Promise((r) => setTimeout(r, 50));
+    } catch (err) {
+      console.error('[RoutineFlow] Failed to inject replay script:', err);
+      throw new Error('Cannot inject replay script into this tab.');
+    }
+  }
+
+  async function sendStepToTab(tid: number, step: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return new Promise((resolve, reject) => {
+      chrome.tabs.sendMessage(tid, { type: 'routineflow.replay.step', step }, (response) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          reject(new Error(err.message));
+          return;
+        }
+        resolve((response as Record<string, unknown>) ?? { ok: false, error: 'No response' });
+      });
+    });
+  }
+
+  async function waitForTabLoad(tid: number, timeoutMs = 15000): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(listener);
+        reject(new Error('Tab navigation timed out.'));
+      }, timeoutMs);
+
+      function listener(updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) {
+        if (updatedTabId === tid && changeInfo.status === 'complete') {
+          clearTimeout(timer);
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve();
+        }
+      }
+      chrome.tabs.onUpdated.addListener(listener);
+
+      // Check if already loaded
+      chrome.tabs.get(tid, (tab) => {
+        if (tab.status === 'complete') {
+          clearTimeout(timer);
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve();
+        }
+      });
+    });
+  }
+
+  let prevStepType = '';
+
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i]!;
+    const stepType = step.type as string;
+    const startMs = Date.now();
+
+    try {
+      // Skip disabled steps
+      if (step.enabled === false) continue;
+
+      // Skip waitFor steps that follow a goto or another waitFor — these are
+      // compiler-inferred postconditions. The action steps already retry on
+      // their own, so these just add unnecessary delay.
+      if (stepType === 'waitFor' && (prevStepType === 'goto' || prevStepType === 'waitFor')) {
+        stepResults.push({ stepIndex: i, stepType, ok: true, durationMs: 0 });
+        prevStepType = stepType;
+        continue;
+      }
+
+      // --- goto: navigate the tab ---
+      if (stepType === 'goto') {
+        const url = step.url as string;
+        // Always navigate — even same base URL may have different hash/state
+        await chrome.tabs.update(tabId, { url });
+        await waitForTabLoad(tabId);
+        replayScriptInjected = false;
+        stepResults.push({ stepIndex: i, stepType, ok: true, durationMs: Date.now() - startMs });
+        // Wait for page to render after navigation
+        await new Promise((r) => setTimeout(r, 300));
+        prevStepType = stepType;
+        continue;
+      }
+
+      // --- newTab ---
+      if (stepType === 'newTab') {
+        const newTab = await chrome.tabs.create({
+          url: (step.initialUrl as string) ?? 'about:blank',
+          active: true
+        });
+        if (newTab.id) {
+          tabId = newTab.id;
+          replayScriptInjected = false;
+          await waitForTabLoad(tabId);
+        }
+        stepResults.push({ stepIndex: i, stepType, ok: true, durationMs: Date.now() - startMs });
+        prevStepType = stepType;
+        continue;
+      }
+
+      // --- closeTab ---
+      if (stepType === 'closeTab') {
+        await chrome.tabs.remove(tabId);
+        const [fallback] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        if (fallback?.id) {
+          tabId = fallback.id;
+          replayScriptInjected = false;
+        }
+        stepResults.push({ stepIndex: i, stepType, ok: true, durationMs: Date.now() - startMs });
+        prevStepType = stepType;
+        continue;
+      }
+
+      // --- Action steps: inject script and execute in page ---
+      await ensureReplayScript(tabId);
+
+      // Retry with polling for elements that haven't appeared yet
+      let result: Record<string, unknown> = { ok: false, error: 'No attempts made' };
+      // waitFor steps get a shorter timeout since they're just checking state
+      const defaultTimeout = stepType === 'waitFor' ? 3000 : 5000;
+      const maxWaitMs = Math.min((step.timeoutMs as number | undefined) ?? defaultTimeout, defaultTimeout);
+      const pollInterval = 150;
+      const deadline = Date.now() + maxWaitMs;
+
+      while (Date.now() < deadline) {
+        try {
+          result = await sendStepToTab(tabId, step);
+          if (result.ok) break;
+          // If element not found, wait and retry
+          if (typeof result.error === 'string' && result.error.includes('locator')) {
+            await new Promise((r) => setTimeout(r, pollInterval));
+            continue;
+          }
+          break; // Other errors: don't retry
+        } catch {
+          // Tab message failed — script may need re-injection after SPA nav
+          replayScriptInjected = false;
+          await ensureReplayScript(tabId);
+          await new Promise((r) => setTimeout(r, pollInterval));
+        }
+      }
+
+      stepResults.push({
+        stepIndex: i,
+        stepType,
+        ok: !!result.ok,
+        ...(result.error ? { error: result.error as string } : {}),
+        durationMs: Date.now() - startMs
+      });
+
+      if (!result.ok) {
+        return { workflowId, status: 'failed', stepResults };
+      }
+
+      // Brief pause between steps for visual feedback
+      await new Promise((r) => setTimeout(r, 80));
+
+      prevStepType = stepType;
+    } catch (err) {
+      stepResults.push({
+        stepIndex: i,
+        stepType,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - startMs
+      });
+      return { workflowId, status: 'failed', stepResults };
+    }
+  }
+
+  return { workflowId, status: 'succeeded', stepResults };
+}

@@ -523,6 +523,38 @@ export function compileRecording(
     compiledSteps.push(...compileEventToSteps(event, nextId));
   }
 
+  // If the first step isn't a goto/newTab, prepend one based on the first
+  // event's pageUrl so the runner navigates to the correct page first.
+  const firstStep = compiledSteps[0];
+  if (
+    firstStep &&
+    firstStep.type !== 'goto' &&
+    firstStep.type !== 'newTab'
+  ) {
+    const firstEvent = promoted[0];
+    // pageUrl: event level (new) → element snapshot (old) → session startUrl (fallback)
+    const pageUrl =
+      firstEvent?.pageUrl ??
+      ((firstEvent as unknown as { element?: { pageUrl?: string } })?.element?.pageUrl) ??
+      recording.startUrl;
+    if (pageUrl) {
+      compiledSteps.unshift({
+        id: nextId(),
+        type: 'goto',
+        enabled: true,
+        url: pageUrl,
+        waitUntil: 'load',
+        timeoutMs: DEFAULT_STEP_TIMEOUT_MS,
+        retryPolicy: DEFAULT_RETRY_POLICY,
+        debug: {
+          ...createDefaultDebugMetadata(),
+          notes: ['inferred-initial-navigation'],
+          extra: {}
+        }
+      });
+    }
+  }
+
   const withPostconditions = insertPostconditions(compiledSteps, nextId);
 
   const createdAt = options.createdAt ?? recording.startedAt;

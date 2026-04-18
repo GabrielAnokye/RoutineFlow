@@ -644,6 +644,7 @@ export const RecordingSessionSchema = z.object({
   name: z.string().min(1),
   startedAt: IsoDateTimeSchema,
   completedAt: IsoDateTimeSchema.optional(),
+  startUrl: z.string().url().optional(),
   events: z.array(RawRecordedEventSchema).min(1)
 });
 
